@@ -93,6 +93,11 @@ func (r *ReplicationClient) SyncAll(ctx context.Context) error {
 	return nil
 }
 
+// SyncMetadata syncs FastRegistry metadata (releases, events) from upstream
+func (r *ReplicationClient) SyncMetadata(ctx context.Context) error {
+	return r.syncMetadata(ctx)
+}
+
 func (r *ReplicationClient) syncMetadata(ctx context.Context) error {
 	// Fetch export from upstream
 	url := fmt.Sprintf("%s/admin/sync/export", strings.TrimSuffix(r.config.URL, "/"))

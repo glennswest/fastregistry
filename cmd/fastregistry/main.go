@@ -107,15 +107,6 @@ func main() {
 		log.Printf("Mirror proxy enabled for %d upstreams", len(cfg.Mirrors))
 	}
 
-	// Initialize sync scheduler
-	var scheduler *sync.Scheduler
-	if len(cfg.Sync.Sources) > 0 {
-		scheduler = sync.NewScheduler(cfg.Sync.Sources, blobs, metadata)
-		scheduler.Start()
-		log.Printf("Sync scheduler started with %d sources", len(cfg.Sync.Sources))
-		defer scheduler.Stop()
-	}
-
 	// Initialize certificate manager
 	var certMgr *certs.Manager
 	certMgr, err = certs.NewManager(cfg.Certs)
@@ -131,6 +122,15 @@ func main() {
 		releaseMgr.Start()
 		log.Printf("Release manager started (upstream: %s/%s)", cfg.Releases.Upstream, cfg.Releases.Repository)
 		defer releaseMgr.Stop()
+	}
+
+	// Initialize sync scheduler (after release manager so it can sync metadata)
+	var scheduler *sync.Scheduler
+	if len(cfg.Sync.Sources) > 0 {
+		scheduler = sync.NewScheduler(cfg.Sync.Sources, blobs, metadata, releaseMgr, eventStore)
+		scheduler.Start()
+		log.Printf("Sync scheduler started with %d sources", len(cfg.Sync.Sources))
+		defer scheduler.Stop()
 	}
 
 	// Create UI handler

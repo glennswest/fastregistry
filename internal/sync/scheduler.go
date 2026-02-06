@@ -9,18 +9,22 @@ import (
 	"time"
 
 	"github.com/gwest/fastregistry/config"
+	"github.com/gwest/fastregistry/internal/events"
+	"github.com/gwest/fastregistry/internal/releases"
 	"github.com/gwest/fastregistry/internal/storage"
 )
 
 // Scheduler manages sync jobs
 type Scheduler struct {
-	sources  []config.SyncSource
-	blobs    *storage.BlobStore
-	metadata *storage.MetadataStore
-	jobs     map[string]*syncJob
-	mu       sync.Mutex
-	ctx      context.Context
-	cancel   context.CancelFunc
+	sources    []config.SyncSource
+	blobs      *storage.BlobStore
+	metadata   *storage.MetadataStore
+	releaseMgr *releases.Manager
+	eventStore *events.Store
+	jobs       map[string]*syncJob
+	mu         sync.Mutex
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 // SyncClient is the interface for sync clients
@@ -29,34 +33,49 @@ type SyncClient interface {
 	SyncRepository(ctx context.Context, repo string, progress *Progress) error
 }
 
+// MetadataSyncer is an optional interface for clients that can sync metadata
+type MetadataSyncer interface {
+	SyncMetadata(ctx context.Context) error
+}
+
 type syncJob struct {
-	source     config.SyncSource
-	syncClient SyncClient
-	lastRun    time.Time
-	running    bool
-	progress   *Progress
+	source         config.SyncSource
+	syncClient     SyncClient
+	metadataSyncer MetadataSyncer // optional, for full replication
+	lastRun        time.Time
+	running        bool
+	progress       *Progress
 }
 
 // NewScheduler creates a new sync scheduler
-func NewScheduler(sources []config.SyncSource, blobs *storage.BlobStore, metadata *storage.MetadataStore) *Scheduler {
+func NewScheduler(sources []config.SyncSource, blobs *storage.BlobStore, metadata *storage.MetadataStore, releaseMgr *releases.Manager, eventStore *events.Store) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	s := &Scheduler{
-		sources:  sources,
-		blobs:    blobs,
-		metadata: metadata,
-		jobs:     make(map[string]*syncJob),
-		ctx:      ctx,
-		cancel:   cancel,
+		sources:    sources,
+		blobs:      blobs,
+		metadata:   metadata,
+		releaseMgr: releaseMgr,
+		eventStore: eventStore,
+		jobs:       make(map[string]*syncJob),
+		ctx:        ctx,
+		cancel:     cancel,
 	}
 
 	// Initialize jobs
 	for _, src := range sources {
 		var client SyncClient
+		var metaSyncer MetadataSyncer
+
 		switch src.Type {
 		case "quay":
 			client = NewQuayClient(src, blobs, metadata)
-		case "registry", "fastregistry":
+		case "fastregistry":
+			// Full replication including metadata
+			replClient := NewReplicationClient(src, blobs, metadata, releaseMgr, eventStore)
+			client = replClient
+			metaSyncer = replClient
+		case "registry":
 			client = NewRegistryClient(src, blobs, metadata)
 		default:
 			log.Printf("Warning: unknown sync source type: %s", src.Type)
@@ -64,8 +83,9 @@ func NewScheduler(sources []config.SyncSource, blobs *storage.BlobStore, metadat
 		}
 
 		s.jobs[src.Name] = &syncJob{
-			source:     src,
-			syncClient: client,
+			source:         src,
+			syncClient:     client,
+			metadataSyncer: metaSyncer,
 		}
 	}
 
@@ -197,6 +217,14 @@ func (s *Scheduler) runJob(name string) {
 			continue
 		}
 		job.progress.SyncedRepos++
+	}
+
+	// Sync metadata if supported (FastRegistry replication)
+	if job.metadataSyncer != nil {
+		log.Printf("Syncing metadata for %s", name)
+		if err := job.metadataSyncer.SyncMetadata(ctx); err != nil {
+			log.Printf("Warning: metadata sync failed for %s: %v", name, err)
+		}
 	}
 
 	duration := time.Since(job.progress.StartTime)

@@ -41,7 +41,7 @@ releases:
 sync:
   sources:
     - name: primary
-      type: registry
+      type: fastregistry
       url: http://fastregistry.gw.lo:5000
       mode: continuous
       schedule: "*/15 * * * *"
