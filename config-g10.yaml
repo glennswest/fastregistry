@@ -1,6 +1,7 @@
 # FastRegistry Configuration for fastregistry.g10.lo
 server:
   addr: ":5000"
+  also_listen: ":80"
 
 storage:
   path: /data/registry

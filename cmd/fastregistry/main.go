@@ -210,6 +210,26 @@ func main() {
 		}
 	}()
 
+	// Start additional server if configured (e.g., port 80)
+	var server2 *http.Server
+	if cfg.Server.AlsoListen != "" {
+		server2 = &http.Server{
+			Addr:              cfg.Server.AlsoListen,
+			Handler:           router,
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       0,
+			WriteTimeout:      0,
+			IdleTimeout:       120 * time.Second,
+			MaxHeaderBytes:    1 << 20,
+		}
+		go func() {
+			log.Printf("Also listening on %s", cfg.Server.AlsoListen)
+			if err := server2.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("Secondary server error: %v", err)
+			}
+		}()
+	}
+
 	// Wait for shutdown signal
 	<-shutdown
 	log.Printf("Shutting down...")
@@ -220,6 +240,12 @@ func main() {
 
 	if err := server.Shutdown(ctx); err != nil {
 		log.Printf("Shutdown error: %v", err)
+	}
+
+	if server2 != nil {
+		if err := server2.Shutdown(ctx); err != nil {
+			log.Printf("Secondary server shutdown error: %v", err)
+		}
 	}
 
 	log.Printf("Shutdown complete")

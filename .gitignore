@@ -1,7 +1,7 @@
-# Binaries
-fastregistry
-fastregistry-linux
-fastregistry-arm64
+# Binaries (at root only)
+/fastregistry
+/fastregistry-linux
+/fastregistry-arm64
 *.exe
 
 # Container images

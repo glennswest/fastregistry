@@ -23,8 +23,9 @@ type Config struct {
 
 // ServerConfig holds HTTP server settings
 type ServerConfig struct {
-	Addr string    `yaml:"addr"`
-	TLS  TLSConfig `yaml:"tls"`
+	Addr       string    `yaml:"addr"`
+	AlsoListen string    `yaml:"also_listen"` // Additional listen address (e.g., ":80")
+	TLS        TLSConfig `yaml:"tls"`
 }
 
 // TLSConfig holds TLS certificate paths
