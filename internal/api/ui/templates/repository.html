@@ -1,0 +1,49 @@
+{{define "repository-content"}}
+<h1 class="page-title">{{.Content.FullName}}</h1>
+<p class="page-subtitle">Repository details and tags</p>
+
+<div class="pull-command">
+  <span class="label">Pull</span>
+  <code>docker pull {{.Content.RegistryHost}}/{{.Content.FullName}}</code>
+</div>
+
+<div class="stats-row">
+  <div class="stat-card">
+    <div class="stat-label">Tags</div>
+    <div class="stat-value blue">{{.Content.TagCount}}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total Size</div>
+    <div class="stat-value yellow">{{.Content.TotalSizeHuman}}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Last Updated</div>
+    <div class="stat-value" style="font-size:18px">{{.Content.LastUpdatedHuman}}</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Tags <span class="count">{{len .Content.Tags}}</span></div>
+  <div class="table-wrapper">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Tag</th>
+          <th>Digest</th>
+          <th>Size</th>
+          <th>Media Type</th>
+          <th>Pushed</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Content.Tags}}
+        {{template "tag-row" .}}
+        {{else}}
+        <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-tertiary)">No tags</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

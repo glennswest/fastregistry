@@ -1,0 +1,515 @@
+{{define "releases-content"}}
+<h1 class="page-title">OpenShift Releases</h1>
+<p class="page-subtitle">Discover, clone, and manage OpenShift release artifacts</p>
+
+<!-- Stats Row -->
+<div class="stats-row">
+  <div class="stat-card">
+    <div class="stat-label">Total</div>
+    <div class="stat-value blue">{{.Content.TotalCount}}</div>
+    <div class="stat-detail">discovered releases</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Available</div>
+    <div class="stat-value yellow">{{.Content.AvailableCount}}</div>
+    <div class="stat-detail">upstream releases</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Ready</div>
+    <div class="stat-value purple">{{.Content.ReadyCount}}</div>
+    <div class="stat-detail">with artifacts</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">CA Certificate</div>
+    <div class="stat-value" style="font-size:16px;">
+      {{if .Content.HasCA}}<a href="/admin/certs/ca" class="btn btn-ghost" style="font-size:13px;">Download CA</a>{{else}}<span style="color:var(--text-tertiary);font-size:14px;">Not configured</span>{{end}}
+    </div>
+  </div>
+</div>
+
+<!-- Discover + Clone Actions -->
+<div class="section">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <div class="section-title">Actions</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+    <form hx-post="/admin/releases/discover" hx-target="#releases-browser" hx-swap="outerHTML" style="margin:0;">
+      <button type="submit" class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        Discover Upstream
+      </button>
+    </form>
+
+    {{if .Content.Available}}
+    <div x-data="{ version: '' }" style="display:flex;gap:8px;align-items:flex-end;">
+      <div>
+        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:4px;">Clone Release</label>
+        <select x-model="version" style="min-width:180px;">
+          <option value="">Select version...</option>
+          {{range .Content.Available}}<option value="{{.Version}}">{{.Version}} ({{.Architecture}})</option>{{end}}
+        </select>
+      </div>
+      <button class="btn btn-primary"
+        :disabled="!version"
+        @click="if(version) { fetch('/admin/releases/clone', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({version: version})}).then(() => { htmx.trigger('#releases-browser', 'poll'); version=''; }) }">
+        Clone
+      </button>
+    </div>
+    {{end}}
+  </div>
+</div>
+
+<!-- Release Browser -->
+<div class="section" id="releases-browser"
+     hx-get="/ui/releases" hx-trigger="every 10s" hx-select="#releases-browser" hx-swap="outerHTML">
+
+  {{if .Content.Groups}}
+  <div x-data="releaseBrowser()" x-cloak>
+
+    <!-- Tab Bar -->
+    <div class="release-tabs">
+      <button class="release-tab" :class="{ active: tab === 'browse' }" @click="tab = 'browse'">
+        Browse
+      </button>
+      <button class="release-tab" :class="{ active: tab === 'recent' }" @click="tab = 'recent'">
+        News
+      </button>
+      <button class="release-tab" :class="{ active: tab === 'cloning' }" @click="tab = 'cloning'">
+        Cloning
+        {{if .Content.AllActiveClones}}<span class="tab-count">{{len .Content.AllActiveClones}}</span>{{end}}
+      </button>
+      <button class="release-tab" :class="{ active: tab === 'events' }" @click="tab = 'events'">
+        Events
+        {{if .Content.RecentEvents}}<span class="tab-count">{{len .Content.RecentEvents}}</span>{{end}}
+      </button>
+      <button class="release-tab" :class="{ active: tab === 'usage' }" @click="tab = 'usage'">
+        Usage
+      </button>
+      <button class="release-tab" :class="{ active: tab === 'log' }" @click="tab = 'log'">
+        Log
+      </button>
+    </div>
+
+    <!-- Browse Tab -->
+    <div x-show="tab === 'browse'">
+
+      <!-- Version Pills -->
+      <div class="version-picker">
+        {{range $group := .Content.Groups}}
+        <button class="version-pill"
+          :class="{ active: selectedMM === '{{$group.MajorMinor}}' }"
+          @click="selectedMM = '{{$group.MajorMinor}}'">
+          <span class="version-pill-label">{{$group.MajorMinor}}</span>
+          <span class="version-pill-count">{{$group.TotalCount}}</span>
+          {{if $group.ReadyCount}}<span class="version-pill-ready">{{$group.ReadyCount}} ready</span>{{end}}
+        </button>
+        {{end}}
+      </div>
+
+      <!-- Card Grids per Group -->
+      {{range $group := .Content.Groups}}
+      <div x-show="selectedMM === '{{$group.MajorMinor}}'" x-cloak>
+        <div class="release-group-header">
+          {{$group.MajorMinor}} <span class="count">{{$group.TotalCount}} releases</span>
+          {{if $group.ReadyCount}}<span class="release-badge badge-ready" style="margin-left:8px;">{{$group.ReadyCount}} ready</span>{{end}}
+          {{if $group.AvailableCount}}<span class="release-badge badge-available" style="margin-left:4px;">{{$group.AvailableCount}} available</span>{{end}}
+        </div>
+        <div class="release-card-grid">
+          {{range $rel := $group.Releases}}
+          <div class="release-card">
+            <div class="release-card-header">
+              <a href="/ui/releases/{{$rel.Tag}}" class="release-card-version" hx-get="/ui/releases/{{$rel.Tag}}" hx-target=".page-content" hx-swap="innerHTML" hx-push-url="true">{{$rel.Version}}</a>
+              <span class="release-badge badge-{{$rel.State}}">{{$rel.State}}</span>
+            </div>
+            <div class="release-card-meta">
+              <span>{{$rel.Architecture}}</span>
+              <span>{{humanTime $rel.DiscoveredAt}}</span>
+            </div>
+            <div class="release-card-footer">
+              {{if $rel.Artifacts}}
+                <div class="release-card-artifacts">
+                  {{range $rel.Artifacts}}
+                  <a href="/files/releases/{{$rel.Version}}/{{.Name}}" class="tag-badge" style="margin:2px;font-size:11px;">{{.Name}}</a>
+                  {{end}}
+                </div>
+              {{else if eq $rel.State "available"}}
+                <button class="btn btn-sm btn-primary"
+                  onclick="fetch('/admin/releases/clone', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({version:'{{$rel.Version}}'})}).then(() => htmx.trigger('#releases-browser', 'poll'))">
+                  Clone
+                </button>
+              {{else if eq $rel.State "ready"}}
+                <a href="/admin/releases/{{$rel.Version}}/artifacts" class="btn btn-sm btn-ghost">Artifacts</a>
+              {{else}}
+                <span style="color:var(--text-tertiary);font-size:12px;">-</span>
+              {{end}}
+              {{if $rel.Error}}<span style="color:var(--accent-red);font-size:11px;" title="{{$rel.Error}}">error</span>{{end}}
+            </div>
+          </div>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+    </div>
+
+    <!-- News Tab -->
+    <div x-show="tab === 'recent'" x-cloak>
+      {{if .Content.RecentReleases}}
+      <div class="table-wrapper" style="margin-top:16px;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Version</th>
+              <th>Stream</th>
+              <th>Architecture</th>
+              <th>State</th>
+              <th>Discovered</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range $rel := .Content.RecentReleases}}
+            <tr>
+              <td style="font-weight:600;"><a href="/ui/releases/{{$rel.Tag}}" hx-get="/ui/releases/{{$rel.Tag}}" hx-target=".page-content" hx-swap="innerHTML" hx-push-url="true">{{$rel.Version}}</a></td>
+              <td><span class="tag-badge">{{$rel.MajorMinor}}</span></td>
+              <td>{{$rel.Architecture}}</td>
+              <td>
+                <span class="release-badge badge-{{$rel.StateBadge}}">{{$rel.State}}</span>
+                {{if $rel.HasError}}<span style="color:var(--accent-red);font-size:11px;margin-left:6px;" title="{{$rel.Error}}">error</span>{{end}}
+              </td>
+              <td style="color:var(--text-secondary);">{{$rel.DiscoveredAt}}</td>
+              <td>
+                {{if eq $rel.State "available"}}
+                <button class="btn btn-sm btn-primary"
+                  onclick="fetch('/admin/releases/clone', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({version:'{{$rel.Version}}'})}).then(() => htmx.trigger('#releases-browser', 'poll'))">
+                  Clone
+                </button>
+                {{else if eq $rel.State "ready"}}
+                <a href="/admin/releases/{{$rel.Version}}/artifacts" class="btn btn-sm btn-ghost">Artifacts</a>
+                {{end}}
+              </td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      <div class="empty-state">
+        <h3>No new releases</h3>
+        <p>Releases discovered after the initial scan will appear here</p>
+      </div>
+      {{end}}
+    </div>
+
+    <!-- Cloning Tab -->
+    <div x-show="tab === 'cloning'" x-cloak>
+      <div id="clone-progress-section"
+           hx-get="/ui/releases" hx-trigger="every 2s" hx-select="#clone-progress-section" hx-target="#clone-progress-section" hx-swap="outerHTML">
+
+        {{if .Content.AllActiveClones}}
+        <div x-data="{ activeClone: '{{(index .Content.AllActiveClones 0).Version}}' }">
+          <!-- Per-clone subtabs -->
+          <div class="version-picker" style="margin-top:16px;">
+            {{range $clone := .Content.AllActiveClones}}
+            <button class="version-pill"
+              :class="{ active: activeClone === '{{$clone.Version}}' }"
+              @click="activeClone = '{{$clone.Version}}'">
+              <span class="version-pill-label">{{$clone.Version}}</span>
+              <span class="release-badge badge-cloning" style="font-size:10px;">{{$clone.Phase}}</span>
+            </button>
+            {{end}}
+          </div>
+
+          {{range $clone := .Content.AllActiveClones}}
+          <div x-show="activeClone === '{{$clone.Version}}'" style="margin-top:16px;">
+            <div class="stat-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <span style="font-weight:600;font-size:15px;">{{$clone.Version}}</span>
+                <span class="release-badge badge-cloning">{{$clone.Phase}}</span>
+              </div>
+              <div class="progress-bar-wrapper" style="height:12px;">
+                <div class="progress-bar" style="width:{{printf "%.0f" $clone.PercentDone}}%;"></div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px;">
+                <div>
+                  <div class="stat-label">Blobs</div>
+                  <div style="font-size:18px;font-weight:600;">{{$clone.SyncedBlobs}}/{{$clone.TotalBlobs}}</div>
+                </div>
+                <div>
+                  <div class="stat-label">Bytes</div>
+                  <div style="font-size:18px;font-weight:600;">{{humanBytes $clone.SyncedBytes}} / {{humanBytes $clone.TotalBytes}}</div>
+                </div>
+                <div>
+                  <div class="stat-label">Progress</div>
+                  <div style="font-size:18px;font-weight:600;">{{printf "%.1f" $clone.PercentDone}}%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          {{end}}
+        </div>
+        {{else}}
+        <div class="empty-state" style="padding:40px 20px;">
+          <h3>No active clones</h3>
+          <p>Start a clone from the Browse tab to see live progress here</p>
+        </div>
+        {{end}}
+
+        <!-- Clone History -->
+        {{if .Content.CloneHistory}}
+        <div style="margin-top:24px;">
+          <div class="section-title">Clone History</div>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Version</th>
+                  <th>Status</th>
+                  <th>Duration</th>
+                  <th>Blobs</th>
+                  <th>Size</th>
+                  <th>Completed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .Content.CloneHistory}}
+                <tr>
+                  <td style="font-weight:600;">{{.Version}}</td>
+                  <td>
+                    {{if .Success}}<span class="release-badge badge-success">success</span>
+                    {{else}}<span class="release-badge badge-error">failed</span>{{end}}
+                  </td>
+                  <td>{{.Duration}}</td>
+                  <td>{{.TotalBlobs}}</td>
+                  <td>{{humanBytes .TotalBytes}}</td>
+                  <td style="color:var(--text-secondary);">{{humanTime .CompletedAt}}</td>
+                </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {{end}}
+      </div>
+    </div>
+
+    <!-- Events Tab -->
+    <div x-show="tab === 'events'" x-cloak>
+      {{if .Content.RecentEvents}}
+      <div x-data="{ filter: 'all' }" style="margin-top:16px;">
+        <!-- Severity filter pills -->
+        <div class="version-picker" style="margin-bottom:16px;">
+          <button class="version-pill" :class="{ active: filter === 'all' }" @click="filter = 'all'">All</button>
+          <button class="version-pill" :class="{ active: filter === 'error' }" @click="filter = 'error'">Errors</button>
+          <button class="version-pill" :class="{ active: filter === 'warning' }" @click="filter = 'warning'">Warnings</button>
+          <button class="version-pill" :class="{ active: filter === 'success' }" @click="filter = 'success'">Success</button>
+          <button class="version-pill" :class="{ active: filter === 'info' }" @click="filter = 'info'">Info</button>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Severity</th>
+                <th>Type</th>
+                <th>Version</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{range $ev := .Content.RecentEvents}}
+              <tr x-show="filter === 'all' || filter === '{{$ev.Severity}}'">
+                <td style="color:var(--text-secondary);white-space:nowrap;">{{$ev.Time.Format "15:04:05"}}</td>
+                <td><span class="release-badge badge-{{$ev.Severity}}">{{$ev.Severity}}</span></td>
+                <td><span class="tag-badge">{{$ev.Type}}</span></td>
+                <td style="font-weight:600;">{{$ev.Version}}</td>
+                <td style="color:var(--text-secondary);max-width:400px;overflow:hidden;text-overflow:ellipsis;">{{$ev.Details}}</td>
+              </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {{else}}
+      <div class="empty-state" style="padding:40px 20px;">
+        <h3>No events yet</h3>
+        <p>Events will appear as releases are discovered, cloned, and downloaded</p>
+      </div>
+      {{end}}
+    </div>
+
+    <!-- Usage Tab -->
+    <div x-show="tab === 'usage'" x-cloak>
+      <div x-data="{ usageTab: 'overview' }" style="margin-top:16px;">
+        <!-- Usage subtabs -->
+        <div class="version-picker" style="margin-bottom:16px;">
+          <button class="version-pill" :class="{ active: usageTab === 'overview' }" @click="usageTab = 'overview'">Overview</button>
+          <button class="version-pill" :class="{ active: usageTab === 'performance' }" @click="usageTab = 'performance'">Performance</button>
+          <button class="version-pill" :class="{ active: usageTab === 'history' }" @click="usageTab = 'history'">History</button>
+        </div>
+
+        <!-- Overview subtab -->
+        <div x-show="usageTab === 'overview'">
+          {{if .Content.DownloadStats}}
+          <div class="stats-row" style="margin-bottom:24px;">
+            <div class="stat-card">
+              <div class="stat-label">Total Downloads</div>
+              <div class="stat-value blue">{{.Content.DownloadStats.TotalDownloads}}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Total Transferred</div>
+              <div class="stat-value green">{{humanBytes .Content.DownloadStats.TotalBytes}}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Last Download</div>
+              <div class="stat-value" style="font-size:16px;">{{humanTime .Content.DownloadStats.LastDownload}}</div>
+            </div>
+          </div>
+
+          {{if .Content.DownloadStats.ByVersion}}
+          <div style="margin-bottom:24px;">
+            <div class="section-title">Downloads by Version</div>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead><tr><th>Version</th><th>Downloads</th></tr></thead>
+                <tbody>
+                  {{range $ver, $count := .Content.DownloadStats.ByVersion}}
+                  <tr><td style="font-weight:600;">{{$ver}}</td><td>{{$count}}</td></tr>
+                  {{end}}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {{end}}
+
+          {{if .Content.DownloadStats.ByArtifact}}
+          <div>
+            <div class="section-title">Downloads by Artifact</div>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead><tr><th>Artifact</th><th>Downloads</th></tr></thead>
+                <tbody>
+                  {{range $art, $count := .Content.DownloadStats.ByArtifact}}
+                  <tr><td style="font-weight:600;">{{$art}}</td><td>{{$count}}</td></tr>
+                  {{end}}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {{end}}
+
+          {{else}}
+          <div class="empty-state" style="padding:40px 20px;">
+            <h3>No downloads yet</h3>
+            <p>Download statistics will appear once artifacts are downloaded</p>
+          </div>
+          {{end}}
+        </div>
+
+        <!-- Performance subtab -->
+        <div x-show="usageTab === 'performance'">
+          {{if .Content.RecentDownloads}}
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Version</th>
+                  <th>Artifact</th>
+                  <th>Size</th>
+                  <th>Duration</th>
+                  <th>Speed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .Content.RecentDownloads}}
+                <tr>
+                  <td style="color:var(--text-secondary);white-space:nowrap;">{{.Time.Format "15:04:05"}}</td>
+                  <td style="font-weight:600;">{{.Version}}</td>
+                  <td>{{.Artifact}}</td>
+                  <td>{{humanBytes .Size}}</td>
+                  <td>{{humanDuration .Duration}}</td>
+                  <td>{{downloadSpeed .Size .Duration}}</td>
+                </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+          {{else}}
+          <div class="empty-state" style="padding:40px 20px;">
+            <h3>No download data</h3>
+            <p>Performance metrics will appear once artifacts are downloaded</p>
+          </div>
+          {{end}}
+        </div>
+
+        <!-- History subtab -->
+        <div x-show="usageTab === 'history'">
+          {{if .Content.RecentDownloads}}
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Version</th>
+                  <th>Artifact</th>
+                  <th>Client IP</th>
+                  <th>User Agent</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .Content.RecentDownloads}}
+                <tr>
+                  <td style="color:var(--text-secondary);white-space:nowrap;">{{.Time.Format "Jan 2 15:04:05"}}</td>
+                  <td style="font-weight:600;">{{.Version}}</td>
+                  <td>{{.Artifact}}</td>
+                  <td><code>{{.ClientIP}}</code></td>
+                  <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;color:var(--text-secondary);">{{.UserAgent}}</td>
+                </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+          {{else}}
+          <div class="empty-state" style="padding:40px 20px;">
+            <h3>No download history</h3>
+            <p>Download records will appear once artifacts are downloaded</p>
+          </div>
+          {{end}}
+        </div>
+      </div>
+    </div>
+
+    <!-- Log Tab -->
+    <div x-show="tab === 'log'" x-cloak>
+      <div hx-get="/ui/releases" hx-trigger="every 2s" hx-select="#discovery-log" hx-target="#discovery-log" hx-swap="innerHTML">
+        <pre class="discovery-log" id="discovery-log"
+             x-init="$nextTick(() => { $el.scrollTop = $el.scrollHeight })"
+             x-effect="$nextTick(() => { $el.scrollTop = $el.scrollHeight })">{{join .Content.DiscoveryLog "\n"}}</pre>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    function releaseBrowser() {
+      var groups = {{safeJS .Content.GroupsJSON}};
+      return {
+        tab: 'browse',
+        selectedMM: groups.length > 0 ? groups[0] : '',
+        groups: groups
+      };
+    }
+  </script>
+
+  {{else}}
+  <div class="empty-state">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    <h3>No releases discovered</h3>
+    <p>Click "Discover Upstream" to find available OpenShift releases from Quay.io</p>
+  </div>
+  {{end}}
+</div>
+{{end}}

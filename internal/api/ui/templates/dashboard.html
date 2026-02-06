@@ -1,0 +1,45 @@
+{{define "dashboard-content"}}
+<h1 class="page-title">Dashboard</h1>
+<p class="page-subtitle">Overview of your container registry</p>
+
+<div class="stats-row">
+  <div class="stat-card">
+    <div class="stat-label">Repositories</div>
+    <div class="stat-value blue">{{.Content.RepoCount}}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total Tags</div>
+    <div class="stat-value green">{{.Content.TagCount}}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total Size</div>
+    <div class="stat-value yellow">{{.Content.TotalSizeHuman}}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Status</div>
+    <div class="stat-value green">Healthy</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Recently Updated <span class="count">{{len .Content.RecentRepos}}</span></div>
+  <div class="table-wrapper">
+    <div class="recent-list">
+      {{range .Content.RecentRepos}}
+      <a href="/ui/repositories/{{.FullName}}" class="recent-item">
+        <div>
+          <div class="recent-item-name">{{.FullName}}</div>
+          <div class="recent-item-meta">{{.TagCount}} tags &middot; {{.TotalSizeHuman}}</div>
+        </div>
+        <div class="recent-item-meta">{{.LastUpdatedHuman}}</div>
+      </a>
+      {{else}}
+      <div class="empty-state">
+        <h3>No repositories yet</h3>
+        <p>Push your first image to get started.</p>
+      </div>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}

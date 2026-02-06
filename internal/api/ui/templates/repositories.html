@@ -1,0 +1,29 @@
+{{define "repositories-content"}}
+<h1 class="page-title">Repositories</h1>
+<p class="page-subtitle">All container image repositories</p>
+
+<div class="toolbar">
+  <div class="toolbar-left">
+    <span class="section-title">{{len .Content.Repos}} repositories</span>
+  </div>
+  <div class="toolbar-right">
+    <select hx-get="/ui/repositories" hx-target="#repo-grid" hx-select="#repo-grid" hx-swap="outerHTML" name="sort">
+      <option value="name">Sort by name</option>
+      <option value="updated">Sort by updated</option>
+      <option value="size">Sort by size</option>
+    </select>
+  </div>
+</div>
+
+<div class="card-grid" id="repo-grid">
+  {{range .Content.Repos}}
+  {{template "repo-card" .}}
+  {{else}}
+  <div class="empty-state" style="grid-column: 1 / -1">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+    <h3>No repositories</h3>
+    <p>Push a container image to create your first repository.</p>
+  </div>
+  {{end}}
+</div>
+{{end}}

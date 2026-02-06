@@ -1,0 +1,65 @@
+{{define "manifest-content"}}
+<h1 class="page-title">Manifest Inspector</h1>
+<p class="page-subtitle">{{.Content.Repo}} @ {{.Content.Reference}}</p>
+
+<div class="manifest-overview">
+  <div class="manifest-card">
+    <div class="manifest-card-label">Digest</div>
+    <div class="manifest-card-value mono">{{.Content.Digest}}</div>
+  </div>
+  <div class="manifest-card">
+    <div class="manifest-card-label">Size</div>
+    <div class="manifest-card-value">{{.Content.SizeHuman}}</div>
+  </div>
+  <div class="manifest-card">
+    <div class="manifest-card-label">Created</div>
+    <div class="manifest-card-value">{{.Content.CreatedHuman}}</div>
+  </div>
+  <div class="manifest-card">
+    <div class="manifest-card-label">Media Type</div>
+    <div class="manifest-card-value mono" style="font-size:12px">{{.Content.MediaType}}</div>
+  </div>
+</div>
+
+{{if .Content.Layers}}
+<div class="section layers-section">
+  <div class="layers-title">Layers <span class="count" style="font-size:12px;font-weight:500;color:var(--text-tertiary)">{{len .Content.Layers}}</span></div>
+  <div class="table-wrapper">
+    {{range $i, $layer := .Content.Layers}}
+    <div class="layer-row">
+      <div class="layer-index">{{inc $i}}</div>
+      <div class="layer-bar-wrapper">
+        <div class="layer-bar" style="width: {{$layer.SizePercent}}%"></div>
+      </div>
+      <div class="layer-digest" title="{{$layer.Digest}}">{{$layer.DigestShort}}</div>
+      <div class="layer-size">{{$layer.SizeHuman}}</div>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{if .Content.Annotations}}
+<div class="section annotations-table">
+  <div class="annotations-title">Annotations</div>
+  <div class="table-wrapper">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Key</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $k, $v := .Content.Annotations}}
+        <tr>
+          <td class="mono">{{$k}}</td>
+          <td>{{$v}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}
+{{end}}

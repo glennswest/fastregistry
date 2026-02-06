@@ -1,0 +1,73 @@
+# FastRegistry Example Configuration
+
+server:
+  addr: ":5000"
+  # TLS is optional - uncomment to enable HTTPS
+  # tls:
+  #   cert: /etc/fastregistry/tls.crt
+  #   key: /etc/fastregistry/tls.key
+
+storage:
+  path: /var/lib/fastregistry
+  cache_size_mb: 1024
+  gc:
+    enabled: true
+    schedule: "0 2 * * *"  # 2 AM daily
+    keep_recent: 10
+
+# Mesh networking (optional - enables horizontal scaling)
+mesh:
+  enabled: false
+  bind: ":7946"
+  peers: []
+  replication_factor: 2
+
+# Mirror/proxy upstream registries (optional)
+mirrors:
+  - name: docker.io
+    upstream: https://registry-1.docker.io
+    cache_ttl: 24h
+  - name: quay.io
+    upstream: https://quay.io
+    cache_ttl: 24h
+  - name: gcr.io
+    upstream: https://gcr.io
+    cache_ttl: 24h
+
+# Sync from existing registries (optional)
+# sync:
+#   sources:
+#     - name: local-quay
+#       type: quay
+#       url: https://quay.mycompany.com
+#       token: ${QUAY_TOKEN}
+#       organizations:
+#         - myorg
+#       mode: continuous
+#       schedule: "*/15 * * * *"
+#       concurrency: 10
+
+# Authentication (optional)
+# auth:
+#   type: htpasswd
+#   htpasswd_file: /etc/fastregistry/htpasswd
+
+# OpenShift release management (optional)
+# releases:
+#   enabled: true
+#   upstream: quay.io
+#   repository: openshift-release-dev/ocp-release
+#   local_repo: openshift/release
+#   architectures:
+#     - x86_64
+#   artifact_path: /var/lib/fastregistry/releases
+#   pull_secret: /root/pull-secret.json
+#   auto_discover: true
+#   discover_schedule: "0 */6 * * *"
+
+# Certificate management for agent-based installs (optional)
+# certs:
+#   auto_generate: true
+#   ca_cert: /etc/fastregistry/ca.crt
+#   ca_key: /etc/fastregistry/ca.key
+#   output_dir: /var/lib/fastregistry/certs

@@ -1,0 +1,73 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.Title}} - FastRegistry</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/ui/static/css/style.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+</head>
+<body hx-boost="true">
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">FR</div>
+        <div>
+          <div class="sidebar-title">FastRegistry</div>
+          <div class="sidebar-version">v0.5.0</div>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-section">
+          <div class="nav-section-title">Navigation</div>
+          <a href="/ui/" class="nav-item{{if eq .CurrentNav "dashboard"}} active{{end}}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            <span>Dashboard</span>
+          </a>
+          <a href="/ui/repositories" class="nav-item{{if eq .CurrentNav "repositories"}} active{{end}}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span>Repositories</span>
+          </a>
+          <a href="/ui/releases" class="nav-item{{if eq .CurrentNav "releases"}} active{{end}}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span>Releases</span>
+          </a>
+        </div>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="health-indicator">
+          <div class="health-dot"></div>
+          <span>Healthy</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <header class="content-header">
+        <div class="breadcrumbs">
+          {{range $i, $bc := .Breadcrumbs}}{{if $i}}<span class="breadcrumb-sep">/</span>{{end}}<a href="{{$bc.URL}}" class="breadcrumb-item">{{$bc.Label}}</a>{{end}}
+        </div>
+        <div class="search-wrapper" x-data="{ open: false, query: '', results: [] }">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" class="search-input" placeholder="Search repositories..."
+            x-model="query"
+            @focus="open = true"
+            @click.away="open = false"
+            @input.debounce.300ms="if(query.length > 0) { fetch('/ui/repositories/search?q=' + encodeURIComponent(query)).then(r => r.text()).then(h => { $refs.searchResults.innerHTML = h; open = true; }) } else { open = false }"
+          >
+          <div class="search-results" x-show="open && query.length > 0" x-ref="searchResults" x-cloak></div>
+        </div>
+      </header>
+
+      <div class="page-content" id="main-content">
+        {{block "page-content" .}}{{end}}
+      </div>
+    </main>
+  </div>
+</body>
+</html>{{end}}

@@ -1,0 +1,18 @@
+# Binaries
+fastregistry
+fastregistry-linux
+*.exe
+
+# OS files
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test/debug
+*.test
+*.out
+coverage.html

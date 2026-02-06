@@ -1,0 +1,50 @@
+{{define "repo-card"}}
+<a href="/ui/repositories/{{.FullName}}" class="repo-card">
+  <div class="repo-card-header">
+    <div>
+      <div class="repo-card-name">{{.Name}}</div>
+      {{if .Namespace}}<div class="repo-card-namespace">{{.Namespace}}</div>{{end}}
+    </div>
+  </div>
+  <div class="repo-card-stats">
+    <div class="repo-card-stat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+      {{.TagCount}} tags
+    </div>
+    <div class="repo-card-stat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+      {{.TotalSizeHuman}}
+    </div>
+  </div>
+  <div class="repo-card-footer">
+    <span>{{.LastUpdatedHuman}}</span>
+  </div>
+</a>
+{{end}}
+
+{{define "tag-row"}}
+<tr>
+  <td><span class="tag-badge">{{.Name}}</span></td>
+  <td><span class="digest-display" title="{{.Digest}}">{{.DigestShort}}</span></td>
+  <td>{{.SizeHuman}}</td>
+  <td class="mono" style="font-size:11px;color:var(--text-tertiary)">{{.MediaType}}</td>
+  <td style="color:var(--text-secondary)">{{.PushedHuman}}</td>
+  <td>
+    <a href="/ui/repositories/{{.Repo}}/manifests/{{.Name}}" class="btn btn-ghost" style="font-size:12px;padding:4px 10px">Inspect</a>
+  </td>
+</tr>
+{{end}}
+
+{{define "search-results"}}
+{{range .}}
+<a href="/ui/repositories/{{.FullName}}" class="search-result-item">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+  <div>
+    <div>{{.FullName}}</div>
+    <div class="mono">{{.TagCount}} tags</div>
+  </div>
+</a>
+{{else}}
+<div class="search-empty">No results found</div>
+{{end}}
+{{end}}
