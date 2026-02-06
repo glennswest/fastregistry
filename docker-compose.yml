@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  fastregistry:
+    image: fastregistry:latest
+    container_name: fastregistry
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./config.yaml:/etc/fastregistry/config.yaml:ro
+      - ./pull-secret.json:/etc/fastregistry/pull-secret.json:ro
+      - registry-data:/data/registry
+    environment:
+      - TZ=America/New_York
+
+volumes:
+  registry-data:
