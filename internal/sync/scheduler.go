@@ -262,12 +262,34 @@ func (s *Scheduler) ListJobs() []string {
 	return names
 }
 
+// GetAllJobStatuses returns status for all jobs
+func (s *Scheduler) GetAllJobStatuses() []JobStatus {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var statuses []JobStatus
+	for name, job := range s.jobs {
+		status := JobStatus{
+			Name:    name,
+			Running: job.running,
+			LastRun: job.lastRun,
+			Source:  &job.source,
+		}
+		if job.progress != nil {
+			status.Progress = job.progress
+		}
+		statuses = append(statuses, status)
+	}
+	return statuses
+}
+
 // JobStatus represents the status of a sync job
 type JobStatus struct {
 	Name     string
 	Running  bool
 	LastRun  time.Time
 	Progress *Progress
+	Source   *config.SyncSource
 }
 
 // Errors

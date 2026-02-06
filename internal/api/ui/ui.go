@@ -159,14 +159,38 @@ type ArtifactView struct {
 	DownloadURL string
 }
 
+type SyncData struct {
+	Jobs []SyncJobView
+}
+
+type SyncJobView struct {
+	Name         string
+	Running      bool
+	LastRun      time.Time
+	LastRunHuman string
+	Progress     *sync.Progress
+	Source       *SyncSourceView
+}
+
+type SyncSourceView struct {
+	Type          string
+	URL           string
+	Schedule      string
+	Mode          string
+	Concurrency   int
+	Repositories  []string
+	Organizations []string
+}
+
 // page name → content template name mapping
 var pageContentMap = map[string]string{
-	"dashboard":    "dashboard-content",
-	"repositories": "repositories-content",
-	"repository":   "repository-content",
-	"manifest":     "manifest-content",
+	"dashboard":       "dashboard-content",
+	"repositories":    "repositories-content",
+	"repository":      "repository-content",
+	"manifest":        "manifest-content",
 	"releases":        "releases-content",
 	"release-detail":  "release-detail-content",
+	"sync":            "sync-content",
 }
 
 // NewHandler creates a new UI handler.
@@ -192,6 +216,28 @@ func NewHandler(metadata *storage.MetadataStore, blobs *storage.BlobStore, sched
 			}
 			bps := float64(size) / d.Seconds()
 			return humanBytes(int64(bps)) + "/s"
+		},
+		"elapsed": func(t time.Time) string {
+			if t.IsZero() {
+				return "-"
+			}
+			d := time.Since(t)
+			if d < time.Minute {
+				return fmt.Sprintf("%ds", int(d.Seconds()))
+			}
+			if d < time.Hour {
+				return fmt.Sprintf("%dm%ds", int(d.Minutes()), int(d.Seconds())%60)
+			}
+			return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
+		},
+		"div": func(a, b int) int {
+			if b == 0 {
+				return 0
+			}
+			return a / b
+		},
+		"mul": func(a, b int) int {
+			return a * b
 		},
 	}
 
@@ -264,6 +310,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/releases/"):
 		tag := strings.TrimPrefix(path, "/releases/")
 		h.handleReleaseDetail(w, r, tag)
+
+	case path == "/sync":
+		h.handleSync(w, r)
+
+	case path == "/sync/status":
+		h.handleSyncStatus(w, r)
+
+	case strings.HasPrefix(path, "/sync/trigger/"):
+		name := strings.TrimPrefix(path, "/sync/trigger/")
+		h.handleSyncTrigger(w, r, name)
 
 	default:
 		http.NotFound(w, r)
@@ -843,4 +899,102 @@ func humanTime(t time.Time) string {
 	default:
 		return t.Format("Jan 2, 2006")
 	}
+}
+
+func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
+	data := SyncData{}
+
+	if h.scheduler != nil {
+		statuses := h.scheduler.GetAllJobStatuses()
+		for _, s := range statuses {
+			jv := SyncJobView{
+				Name:         s.Name,
+				Running:      s.Running,
+				LastRun:      s.LastRun,
+				LastRunHuman: humanTime(s.LastRun),
+				Progress:     s.Progress,
+			}
+			if s.Source != nil {
+				jv.Source = &SyncSourceView{
+					Type:          s.Source.Type,
+					URL:           s.Source.URL,
+					Schedule:      s.Source.Schedule,
+					Mode:          s.Source.Mode,
+					Concurrency:   s.Source.Concurrency,
+					Repositories:  s.Source.Repositories,
+					Organizations: s.Source.Organizations,
+				}
+			}
+			data.Jobs = append(data.Jobs, jv)
+		}
+	}
+
+	h.render(w, r, "sync", PageData{
+		Title:      "Sync",
+		CurrentNav: "sync",
+		Breadcrumbs: []Breadcrumb{
+			{Label: "Dashboard", URL: "/ui/"},
+			{Label: "Sync", URL: "/ui/sync"},
+		},
+		Content: data,
+	})
+}
+
+func (h *Handler) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
+	data := SyncData{}
+
+	if h.scheduler != nil {
+		statuses := h.scheduler.GetAllJobStatuses()
+		for _, s := range statuses {
+			jv := SyncJobView{
+				Name:         s.Name,
+				Running:      s.Running,
+				LastRun:      s.LastRun,
+				LastRunHuman: humanTime(s.LastRun),
+				Progress:     s.Progress,
+			}
+			if s.Source != nil {
+				jv.Source = &SyncSourceView{
+					Type:          s.Source.Type,
+					URL:           s.Source.URL,
+					Schedule:      s.Source.Schedule,
+					Mode:          s.Source.Mode,
+					Concurrency:   s.Source.Concurrency,
+					Repositories:  s.Source.Repositories,
+					Organizations: s.Source.Organizations,
+				}
+			}
+			data.Jobs = append(data.Jobs, jv)
+		}
+	}
+
+	tmpl, ok := h.pages["sync"]
+	if !ok {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := tmpl.ExecuteTemplate(w, "sync-status-partial", PageData{Content: data}); err != nil {
+		log.Printf("sync status template error: %v", err)
+	}
+}
+
+func (h *Handler) handleSyncTrigger(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.scheduler == nil {
+		http.Error(w, "Sync not configured", http.StatusNotFound)
+		return
+	}
+
+	if err := h.scheduler.TriggerSync(name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }

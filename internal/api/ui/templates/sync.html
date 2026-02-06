@@ -1,0 +1,224 @@
+{{define "sync-content"}}
+<div x-data="{ tab: 'status' }">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+    <div>
+      <h1 class="page-title">Sync</h1>
+      <p class="page-subtitle">Registry synchronization status and configuration</p>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="release-tabs" style="margin-bottom:24px;">
+    <button class="release-tab" :class="{ active: tab === 'status' }" @click="tab = 'status'">Status</button>
+    <button class="release-tab" :class="{ active: tab === 'config' }" @click="tab = 'config'">Configuration</button>
+    <button class="release-tab" :class="{ active: tab === 'history' }" @click="tab = 'history'">History</button>
+  </div>
+
+  <!-- Status Tab -->
+  <div x-show="tab === 'status'" x-cloak>
+    {{if .Content.Jobs}}
+    <div id="sync-status" hx-get="/ui/sync/status" hx-trigger="every 5s" hx-swap="innerHTML">
+      {{template "sync-status-partial" .}}
+    </div>
+    {{else}}
+    <div class="empty-state">
+      <h3>No sync sources configured</h3>
+      <p>Add sync sources to your config.yaml to enable registry synchronization.</p>
+    </div>
+    {{end}}
+  </div>
+
+  <!-- Config Tab -->
+  <div x-show="tab === 'config'" x-cloak>
+    {{if .Content.Jobs}}
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>URL</th>
+            <th>Schedule</th>
+            <th>Mode</th>
+            <th>Concurrency</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Content.Jobs}}
+          {{if .Source}}
+          <tr>
+            <td><strong>{{.Name}}</strong></td>
+            <td><span class="badge badge-blue">{{.Source.Type}}</span></td>
+            <td style="font-family:var(--font-mono);font-size:12px;">{{.Source.URL}}</td>
+            <td><code>{{.Source.Schedule}}</code></td>
+            <td>{{.Source.Mode}}</td>
+            <td>{{.Source.Concurrency}}</td>
+          </tr>
+          {{end}}
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="margin-top:24px;">
+      <div class="section-title">Repositories</div>
+      {{range .Content.Jobs}}
+      {{if .Source}}
+      {{if .Source.Repositories}}
+      <div style="margin-bottom:16px;">
+        <div style="font-weight:500;margin-bottom:8px;">{{.Name}}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          {{range .Source.Repositories}}
+          <span class="badge badge-default">{{.}}</span>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+      {{if .Source.Organizations}}
+      <div style="margin-bottom:16px;">
+        <div style="font-weight:500;margin-bottom:8px;">{{.Name}} (Organizations)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          {{range .Source.Organizations}}
+          <span class="badge badge-default">{{.}}</span>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+      {{end}}
+      {{end}}
+    </div>
+    {{else}}
+    <div class="empty-state">
+      <h3>No sync sources configured</h3>
+      <p>Add sync sources to your config.yaml:</p>
+      <pre style="text-align:left;background:var(--bg-tertiary);padding:16px;border-radius:8px;margin-top:16px;font-size:12px;">sync:
+  sources:
+    - name: primary
+      type: registry
+      url: http://other-registry:5000
+      mode: continuous
+      schedule: "*/15 * * * *"
+      concurrency: 5</pre>
+    </div>
+    {{end}}
+  </div>
+
+  <!-- History Tab -->
+  <div x-show="tab === 'history'" x-cloak>
+    {{if .Content.Jobs}}
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Job</th>
+            <th>Last Run</th>
+            <th>Status</th>
+            <th>Repos</th>
+            <th>Tags</th>
+            <th>Data Synced</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Content.Jobs}}
+          <tr>
+            <td><strong>{{.Name}}</strong></td>
+            <td>{{if .LastRun.IsZero}}<span style="color:var(--text-tertiary)">Never</span>{{else}}{{.LastRunHuman}}{{end}}</td>
+            <td>
+              {{if .Running}}
+              <span class="badge badge-blue">Running</span>
+              {{else}}
+              <span class="badge badge-default">Idle</span>
+              {{end}}
+            </td>
+            <td>{{if .Progress}}{{.Progress.SyncedRepos}}/{{.Progress.TotalRepos}}{{else}}-{{end}}</td>
+            <td>{{if .Progress}}{{.Progress.SyncedTags}}/{{.Progress.TotalTags}}{{else}}-{{end}}</td>
+            <td>{{if .Progress}}{{humanBytes .Progress.BytesSynced}}{{else}}-{{end}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <div class="empty-state">
+      <h3>No sync history</h3>
+      <p>Sync history will appear here after the first sync job runs.</p>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{define "sync-status-partial"}}
+{{range .Content.Jobs}}
+<div class="stat-card" style="margin-bottom:16px;padding:20px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <div>
+      <div style="font-size:18px;font-weight:600;">{{.Name}}</div>
+      {{if .Source}}<div style="font-size:12px;color:var(--text-secondary);">{{.Source.URL}}</div>{{end}}
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      {{if .Running}}
+      <span class="badge badge-blue">Running</span>
+      {{else}}
+      <span class="badge badge-default">Idle</span>
+      {{end}}
+      <button class="btn btn-sm" hx-post="/ui/sync/trigger/{{.Name}}" hx-swap="none" {{if .Running}}disabled{{end}}>
+        Sync Now
+      </button>
+    </div>
+  </div>
+
+  {{if .Running}}
+  {{if .Progress}}
+  <div style="margin-bottom:12px;">
+    <div style="height:8px;background:var(--bg-tertiary);border-radius:4px;overflow:hidden;">
+      {{$pct := 0}}
+      {{if gt .Progress.TotalTags 0}}
+        {{$pct = div (mul .Progress.SyncedTags 100) .Progress.TotalTags}}
+      {{end}}
+      <div style="height:100%;width:{{$pct}}%;background:var(--accent-blue);transition:width 0.3s;"></div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;font-size:13px;">
+    <div>
+      <div style="color:var(--text-tertiary);font-size:11px;text-transform:uppercase;">Repos</div>
+      <div style="font-weight:500;">{{.Progress.SyncedRepos}}/{{.Progress.TotalRepos}}</div>
+    </div>
+    <div>
+      <div style="color:var(--text-tertiary);font-size:11px;text-transform:uppercase;">Tags</div>
+      <div style="font-weight:500;">{{.Progress.SyncedTags}}/{{.Progress.TotalTags}}</div>
+    </div>
+    <div>
+      <div style="color:var(--text-tertiary);font-size:11px;text-transform:uppercase;">Data</div>
+      <div style="font-weight:500;">{{humanBytes .Progress.BytesSynced}}</div>
+    </div>
+    <div>
+      <div style="color:var(--text-tertiary);font-size:11px;text-transform:uppercase;">Elapsed</div>
+      <div style="font-weight:500;">{{elapsed .Progress.StartTime}}</div>
+    </div>
+  </div>
+  {{end}}
+  {{else}}
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;font-size:13px;">
+    <div>
+      <div style="color:var(--text-tertiary);font-size:11px;text-transform:uppercase;">Schedule</div>
+      <div style="font-weight:500;">{{if .Source}}{{.Source.Schedule}}{{else}}-{{end}}</div>
+    </div>
+    <div>
+      <div style="color:var(--text-tertiary);font-size:11px;text-transform:uppercase;">Last Run</div>
+      <div style="font-weight:500;">{{if .LastRun.IsZero}}Never{{else}}{{.LastRunHuman}}{{end}}</div>
+    </div>
+    <div>
+      <div style="color:var(--text-tertiary);font-size:11px;text-transform:uppercase;">Mode</div>
+      <div style="font-weight:500;">{{if .Source}}{{.Source.Mode}}{{else}}-{{end}}</div>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="empty-state">
+  <h3>No sync sources configured</h3>
+  <p>Add sync sources to your config.yaml to enable registry synchronization.</p>
+</div>
+{{end}}
+{{end}}
