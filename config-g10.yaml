@@ -36,3 +36,13 @@ auth:
 releases:
   enabled: true
   pull_secret: /etc/fastregistry/pull-secret.json
+
+# Sync from primary FastRegistry
+sync:
+  sources:
+    - name: primary
+      type: registry
+      url: http://fastregistry.gw.lo:5000
+      mode: continuous
+      schedule: "*/15 * * * *"
+      concurrency: 5
