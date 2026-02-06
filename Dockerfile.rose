@@ -1,0 +1,12 @@
+# Scratch container for MikroTik RouterOS
+# Build with: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o fastregistry ./cmd/fastregistry
+
+FROM scratch
+
+# Copy the pre-built static binary
+COPY fastregistry /fastregistry
+
+EXPOSE 5000
+
+ENTRYPOINT ["/fastregistry"]
+CMD ["-config", "/etc/fastregistry/config.yaml"]

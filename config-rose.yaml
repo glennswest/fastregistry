@@ -1,0 +1,37 @@
+# FastRegistry Configuration for rose1.gw.lo
+server:
+  addr: ":5000"
+
+storage:
+  path: /data/registry
+  cache_size_mb: 2048
+  gc:
+    enabled: true
+    schedule: "0 3 * * *"
+    keep_recent: 20
+
+# Mirror upstream registries
+mirrors:
+  - name: docker.io
+    upstream: https://registry-1.docker.io
+    cache_ttl: 24h
+  - name: quay.io
+    upstream: https://quay.io
+    cache_ttl: 24h
+  - name: gcr.io
+    upstream: https://gcr.io
+    cache_ttl: 24h
+  - name: ghcr.io
+    upstream: https://ghcr.io
+    cache_ttl: 24h
+  - name: registry.k8s.io
+    upstream: https://registry.k8s.io
+    cache_ttl: 24h
+
+# No auth for internal use
+auth:
+  type: none
+
+releases:
+  enabled: true
+  pull_secret: /etc/fastregistry/pull-secret.json

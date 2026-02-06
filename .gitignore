@@ -1,7 +1,17 @@
 # Binaries
 fastregistry
 fastregistry-linux
+fastregistry-arm64
 *.exe
+
+# Container images
+*.tar
+
+# Secrets - NEVER commit these
+pull-secret*.json
+*-secret.json
+*.pem
+*.key
 
 # OS files
 .DS_Store
