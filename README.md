@@ -41,6 +41,14 @@ A high-performance, distributed Docker/OCI container registry written in Go. Des
 - **Scheduled Sync** - Cron-style scheduling or continuous mode
 - **Signature & SBOM Sync** - Optionally sync container signatures
 
+### OpenShift Release Management
+- **Release Discovery** - Auto-discover releases from upstream (quay.io)
+- **Release Cloning** - Mirror complete release images locally
+- **Artifact Extraction** - Extract binaries (openshift-install, oc) and CoreOS ISO
+- **Agent ISO Generation** - Create bootable ISOs with embedded ignition (no openshift-install needed)
+- **Multi-Platform** - Support for x86_64 and aarch64 architectures
+- **Download Tracking** - Usage statistics and event timeline
+
 ### Garbage Collection
 - **Automatic Cleanup** - Remove unused blobs on schedule
 - **Retention Policies** - Keep N most recent tags per repository
@@ -57,6 +65,13 @@ A high-performance, distributed Docker/OCI container registry written in Go. Des
 - **Status API** - Registry status at `/admin/status`
 - **Sync Management** - List, trigger, and monitor sync jobs
 - **Metrics** - Prometheus-compatible endpoint
+
+### Web UI
+- **Dark Theme Dashboard** - Modern HTMX + Alpine.js interface
+- **Repository Browser** - Browse repos, tags, and manifests
+- **Releases Dashboard** - Manage OpenShift releases with live clone progress
+- **Event Timeline** - Track discovery, cloning, and download events
+- **Usage Statistics** - Download metrics and history
 
 ## Architecture
 
@@ -236,6 +251,17 @@ sync:
       schedule: "*/15 * * * *"
       concurrency: 10
 
+releases:
+  enabled: true
+  pull_secret: /path/to/pull-secret.json
+  upstream: quay.io
+  repository: openshift-release-dev/ocp-release
+  local_repo: openshift/release
+  architectures:
+    - x86_64
+    - aarch64
+  auto_discover: true
+
 auth:
   type: htpasswd
   htpasswd_file: /etc/fastregistry/htpasswd
@@ -268,6 +294,45 @@ auth:
 | POST | `/admin/sync/trigger/{job}` | Trigger sync job |
 | GET | `/admin/sync/status/{job}` | Sync job status |
 
+### Releases API
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/admin/releases` | List all releases |
+| POST | `/admin/releases/discover` | Trigger upstream discovery |
+| POST | `/admin/releases/clone` | Clone a release |
+| GET | `/admin/releases/{version}/status` | Release status and progress |
+| GET | `/admin/releases/{version}/artifacts` | List extracted artifacts |
+| POST | `/admin/releases/{version}/iso` | Generate agent ISO |
+| POST | `/admin/releases/{version}/copy` | Copy artifact to remote server |
+| GET | `/files/releases/{version}/{artifact}` | Download artifact |
+| GET | `/files/installs/{uuid}/agent.iso` | Download generated ISO |
+
+### Web UI
+| Endpoint | Description |
+|----------|-------------|
+| `/ui/` | Dashboard |
+| `/ui/repositories` | Repository browser |
+| `/ui/releases` | OpenShift releases management |
+
+## OpenShift Agent ISO Generation
+
+Generate bootable agent ISOs without needing `openshift-install` on the client:
+
+```bash
+# Generate agent ISO from your configs
+curl -X POST "http://localhost:5000/admin/releases/4.21.0-x86_64/iso" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"install_config\": $(cat install-config.yaml | jq -Rs),
+    \"agent_config\": $(cat agent-config.yaml | jq -Rs)
+  }"
+
+# Response includes URL ready for PXE sanboot
+# {"full_url": "http://localhost:5000/files/installs/<uuid>/agent.iso"}
+```
+
+See [docs/RELEASES.md](docs/RELEASES.md) for complete documentation.
+
 ## Use Cases
 
 - **Private Registry** - Host internal container images
@@ -276,6 +341,7 @@ auth:
 - **CI/CD Pipeline** - Fast local registry for builds
 - **Disaster Recovery** - Sync and backup from upstream registries
 - **Distributed Deployment** - Multi-node registry with replication
+- **OpenShift Disconnected Install** - Mirror releases and generate agent ISOs
 
 ## Requirements
 
