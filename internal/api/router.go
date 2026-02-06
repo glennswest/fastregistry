@@ -27,6 +27,7 @@ type Router struct {
 	releaseManager *releases.Manager
 	certManager    *certs.Manager
 	filesHandler   http.Handler
+	exporter       *sync.Exporter
 }
 
 // Authenticator defines the authentication interface
@@ -63,6 +64,11 @@ func (r *Router) SetUI(handler *ui.Handler) {
 // SetFilesHandler sets the static file handler for release artifacts
 func (r *Router) SetFilesHandler(handler http.Handler) {
 	r.filesHandler = handler
+}
+
+// SetExporter sets the replication exporter
+func (r *Router) SetExporter(exporter *sync.Exporter) {
+	r.exporter = exporter
 }
 
 // ServeHTTP implements http.Handler
@@ -202,6 +208,19 @@ func (r *Router) handleAdmin(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		json.NewEncoder(w).Encode(status)
+
+	case path == "/sync/export":
+		// Export all metadata for replication
+		if r.exporter == nil {
+			http.Error(w, `{"error":"exporter not configured"}`, http.StatusNotFound)
+			return
+		}
+		export, err := r.exporter.Export()
+		if err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(export)
 
 	case strings.HasPrefix(path, "/releases"):
 		r.handleReleases(w, req)

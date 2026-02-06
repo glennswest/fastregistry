@@ -136,6 +136,9 @@ func main() {
 	// Create UI handler
 	uiHandler := ui.NewHandler(metadata, blobs, scheduler, releaseMgr, certMgr, eventStore)
 
+	// Create replication exporter
+	exporter := sync.NewExporter(releaseMgr, eventStore, version)
+
 	// Create router
 	router := api.NewRouter(blobs, metadata, uploads, auth)
 	router.SetProxy(proxy)
@@ -143,6 +146,7 @@ func main() {
 	router.SetUI(uiHandler)
 	router.SetReleaseManager(releaseMgr)
 	router.SetCertManager(certMgr)
+	router.SetExporter(exporter)
 
 	// Set up file server for release artifacts and generated ISOs
 	if cfg.Releases.Enabled {

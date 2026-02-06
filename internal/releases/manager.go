@@ -698,6 +698,41 @@ func (m *Manager) saveRelease(rel *Release) error {
 	return m.metadata.PutRaw(key, data)
 }
 
+// ListAllReleases returns all releases (alias for ListReleases for replication).
+func (m *Manager) ListAllReleases() []Release {
+	releases, _ := m.ListReleases()
+	return releases
+}
+
+// ImportRelease imports a release from another FastRegistry instance.
+// It merges with existing release data, preferring the more advanced state.
+func (m *Manager) ImportRelease(rel Release) error {
+	existing, err := m.getRelease(rel.Version)
+	if err == nil {
+		// Merge: keep the more advanced state
+		stateOrder := map[ReleaseState]int{
+			StateAvailable:  0,
+			StateCloning:    1,
+			StateCloned:     2,
+			StateExtracting: 3,
+			StateReady:      4,
+			StateFailed:     5,
+		}
+
+		if stateOrder[rel.State] > stateOrder[existing.State] {
+			// Incoming is more advanced, use it but preserve local artifacts if more
+			if len(existing.Artifacts) > len(rel.Artifacts) {
+				rel.Artifacts = existing.Artifacts
+			}
+		} else {
+			// Existing is same or more advanced, keep existing
+			return nil
+		}
+	}
+
+	return m.saveRelease(&rel)
+}
+
 // CopyArtifact copies an artifact to a remote destination using SCP.
 // Destination format: user@host:/path/ or just /local/path/
 func (m *Manager) CopyArtifact(version, artifact, destination string) error {

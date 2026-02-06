@@ -90,8 +90,8 @@ func (s *Store) SaveCloneHistory(entry CloneHistoryEntry) error {
 	return s.metadata.PutRaw(key, data)
 }
 
-// ListCloneHistory returns all clone history entries.
-func (s *Store) ListCloneHistory() ([]CloneHistoryEntry, error) {
+// ListCloneHistory returns clone history entries up to limit (0 = all).
+func (s *Store) ListCloneHistory(limit int) ([]CloneHistoryEntry, error) {
 	raw, err := s.metadata.ScanPrefix(prefixCloneHistory)
 	if err != nil {
 		return nil, err
@@ -104,6 +104,9 @@ func (s *Store) ListCloneHistory() ([]CloneHistoryEntry, error) {
 			continue
 		}
 		entries = append(entries, entry)
+		if limit > 0 && len(entries) >= limit {
+			break
+		}
 	}
 	return entries, nil
 }
@@ -181,4 +184,75 @@ func (s *Store) saveCounter(c DownloadCounter) {
 		return
 	}
 	s.metadata.PutRaw(prefixDLCounter+"global", data)
+}
+
+// --- Import methods for replication ---
+
+// ImportEvent imports an event from another FastRegistry instance.
+// It skips if an event with the same ID already exists.
+func (s *Store) ImportEvent(ev Event) error {
+	key := prefixEvent + ev.ID
+	// Check if already exists
+	if _, err := s.metadata.GetRaw(key); err == nil {
+		return nil // Already exists
+	}
+	data, err := json.Marshal(ev)
+	if err != nil {
+		return err
+	}
+	return s.metadata.PutRaw(key, data)
+}
+
+// ImportCloneHistory imports a clone history entry.
+// Overwrites existing entry for the same version.
+func (s *Store) ImportCloneHistory(entry CloneHistoryEntry) error {
+	return s.SaveCloneHistory(entry)
+}
+
+// ImportDownloadRecord imports a download record without updating counters.
+// Used for replication where counters are synced separately.
+func (s *Store) ImportDownloadRecord(rec DownloadRecord) error {
+	data, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	// Use timestamp from record to maintain ordering
+	key := fmt.Sprintf("%s%019d", prefixDownload, math.MaxInt64-rec.Time.UnixNano())
+	return s.metadata.PutRaw(key, data)
+}
+
+// ImportDownloadStats imports download statistics, merging with existing.
+func (s *Store) ImportDownloadStats(stats *DownloadCounter) {
+	if stats == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current := s.loadCounter()
+
+	// Take the larger values (in case of split-brain)
+	if stats.TotalDownloads > current.TotalDownloads {
+		current.TotalDownloads = stats.TotalDownloads
+	}
+	if stats.TotalBytes > current.TotalBytes {
+		current.TotalBytes = stats.TotalBytes
+	}
+	if stats.LastDownload.After(current.LastDownload) {
+		current.LastDownload = stats.LastDownload
+	}
+
+	// Merge per-version/artifact counts (take max)
+	for k, v := range stats.ByVersion {
+		if v > current.ByVersion[k] {
+			current.ByVersion[k] = v
+		}
+	}
+	for k, v := range stats.ByArtifact {
+		if v > current.ByArtifact[k] {
+			current.ByArtifact[k] = v
+		}
+	}
+
+	s.saveCounter(current)
 }

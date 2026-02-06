@@ -23,12 +23,18 @@ type Scheduler struct {
 	cancel   context.CancelFunc
 }
 
+// SyncClient is the interface for sync clients
+type SyncClient interface {
+	ListRepositories(ctx context.Context) ([]string, error)
+	SyncRepository(ctx context.Context, repo string, progress *Progress) error
+}
+
 type syncJob struct {
-	source   config.SyncSource
-	client   *QuayClient
-	lastRun  time.Time
-	running  bool
-	progress *Progress
+	source     config.SyncSource
+	syncClient SyncClient
+	lastRun    time.Time
+	running    bool
+	progress   *Progress
 }
 
 // NewScheduler creates a new sync scheduler
@@ -46,18 +52,20 @@ func NewScheduler(sources []config.SyncSource, blobs *storage.BlobStore, metadat
 
 	// Initialize jobs
 	for _, src := range sources {
-		var client *QuayClient
+		var client SyncClient
 		switch src.Type {
 		case "quay":
 			client = NewQuayClient(src, blobs, metadata)
+		case "registry", "fastregistry":
+			client = NewRegistryClient(src, blobs, metadata)
 		default:
 			log.Printf("Warning: unknown sync source type: %s", src.Type)
 			continue
 		}
 
 		s.jobs[src.Name] = &syncJob{
-			source: src,
-			client: client,
+			source:     src,
+			syncClient: client,
 		}
 	}
 
@@ -165,7 +173,7 @@ func (s *Scheduler) runJob(name string) {
 	defer cancel()
 
 	// List repositories
-	repos, err := job.client.ListRepositories(ctx)
+	repos, err := job.syncClient.ListRepositories(ctx)
 	if err != nil {
 		log.Printf("Error listing repositories for %s: %v", name, err)
 		return
@@ -183,7 +191,7 @@ func (s *Scheduler) runJob(name string) {
 		default:
 		}
 
-		if err := job.client.SyncRepository(ctx, repo, job.progress); err != nil {
+		if err := job.syncClient.SyncRepository(ctx, repo, job.progress); err != nil {
 			log.Printf("Error syncing %s: %v", repo, err)
 			job.progress.FailedRepos++
 			continue

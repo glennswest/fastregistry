@@ -608,7 +608,7 @@ func (h *Handler) handleReleases(w http.ResponseWriter, r *http.Request) {
 	// Populate event store data
 	if h.eventStore != nil {
 		data.RecentEvents, _ = h.eventStore.ListEvents(100, "")
-		data.CloneHistory, _ = h.eventStore.ListCloneHistory()
+		data.CloneHistory, _ = h.eventStore.ListCloneHistory(100)
 		data.DownloadStats = h.eventStore.GetDownloadStats()
 		data.RecentDownloads, _ = h.eventStore.ListRecentDownloads(100)
 	}
