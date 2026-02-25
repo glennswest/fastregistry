@@ -1,0 +1,78 @@
+# FastRegistry primary instance
+# Deploy via: oc --server=http://api.rose1.gt.lo:8082 apply -f fastregistry.yaml
+#
+# First-time setup:
+#   Upload pull-secret.json to the secrets volume on rose1:
+#     The volume path will be shown by: oc --server=http://api.rose1.gt.lo:8082 describe pod fastregistry -n g10
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fastregistry-config
+  namespace: g10
+data:
+  config.yaml: |
+    server:
+      addr: ":5000"
+
+    storage:
+      path: /data/registry
+      cache_size_mb: 2048
+      gc:
+        enabled: true
+        schedule: "0 3 * * *"
+        keep_recent: 20
+
+    mirrors:
+      - name: docker.io
+        upstream: https://registry-1.docker.io
+        cache_ttl: 24h
+      - name: quay.io
+        upstream: https://quay.io
+        cache_ttl: 24h
+      - name: gcr.io
+        upstream: https://gcr.io
+        cache_ttl: 24h
+      - name: ghcr.io
+        upstream: https://ghcr.io
+        cache_ttl: 24h
+      - name: registry.k8s.io
+        upstream: https://registry.k8s.io
+        cache_ttl: 24h
+
+    auth:
+      type: none
+
+    releases:
+      enabled: true
+      pull_secret: /secrets/pull-secret.json
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fastregistry
+  namespace: g10
+  annotations:
+    vkube.io/network: g10
+    vkube.io/boot-priority: "30"
+    vkube.io/depends-on: "g10_dns_microdns"
+    vkube.io/image-policy: auto
+    vkube.io/static-ip: "192.168.10.50"
+spec:
+  restartPolicy: Always
+  volumes:
+    - name: config
+      configMap:
+        name: fastregistry-config
+  containers:
+    - name: fastregistry
+      image: registry.gt.lo:5000/fastregistry:edge
+      volumeMounts:
+        - name: config
+          mountPath: /etc/fastregistry
+        - name: data
+          mountPath: /data/registry
+        - name: secrets
+          mountPath: /secrets

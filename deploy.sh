@@ -1,39 +1,27 @@
 #!/bin/bash
-# Deploy FastRegistry to production server
+# Build and deploy fastregistry to mkube via registry
 set -e
 
-BINARY="fastregistry-linux"
-HOST="fastregistry.gw.lo"
-REMOTE_PATH="/usr/local/bin/fastregistry"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REGISTRY="registry.gt.lo:5000"
+REPO="fastregistry"
 
-echo "=== FastRegistry Deployment ==="
+cd "$SCRIPT_DIR"
 
 # Build
-echo "Building Linux binary..."
-GOOS=linux GOARCH=amd64 go build -o "$BINARY" ./cmd/fastregistry
+"$SCRIPT_DIR/build.sh"
 
-# Get version from binary
-VERSION=$(grep -o 'version.*=.*"[0-9.]*"' cmd/fastregistry/main.go | grep -o '[0-9.]*')
-echo "Version: $VERSION"
+IMAGE_EDGE="$REGISTRY/$REPO:edge"
 
-# Stop service
-echo "Stopping service on $HOST..."
-ssh root@$HOST "systemctl stop fastregistry"
+echo "Pushing to $REGISTRY ..."
+podman push --tls-verify=false "$IMAGE_EDGE"
 
-# Upload
-echo "Uploading binary..."
-scp "$BINARY" root@$HOST:$REMOTE_PATH
+# Trigger mkube registry poll for immediate update
+echo "Triggering registry poll ..."
+curl -s -X POST http://192.168.200.2:8082/api/v1/registry/poll
 
-# Start service
-echo "Starting service..."
-ssh root@$HOST "systemctl start fastregistry"
-
-# Verify
-echo "Verifying..."
-sleep 2
-if ssh root@$HOST "systemctl is-active fastregistry" | grep -q "active"; then
-    echo "=== Deployment successful ==="
-else
-    echo "=== WARNING: Service may not be running ==="
-    ssh root@$HOST "systemctl status fastregistry"
-fi
+echo ""
+echo "=== Deployed ==="
+echo "  Image: $IMAGE_EDGE"
+echo "  Primary: fastregistry @ 192.168.10.50:5000"
+echo "  G10:     fastregistry-g10 @ 192.168.10.202:5000"
