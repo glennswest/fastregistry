@@ -1,9 +1,9 @@
 # FastRegistry primary instance
-# Deploy via: oc --server=http://api.rose1.gt.lo:8082 apply -f fastregistry.yaml
+# Deploy via: oc --server=http://mkube.gt.lo:8082 apply -f fastregistry.yaml
 #
 # First-time setup:
 #   Upload pull-secret.json to the secrets volume on rose1:
-#     The volume path will be shown by: oc --server=http://api.rose1.gt.lo:8082 describe pod fastregistry -n g10
+#     The volume path will be shown by: oc --server=http://mkube.gt.lo:8082 describe pod fastregistry -n g10
 
 apiVersion: v1
 kind: ConfigMap

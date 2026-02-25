@@ -4,12 +4,12 @@
 
 ### 2026-02-24
 - **feat:** Migrate deployment from mkpod to mkube
-- **feat:** Add mkube Pod manifests (fastregistry.yaml, fastregistry-g10.yaml)
-- **feat:** Add ConfigMaps for registry configuration
+- **feat:** Add mkube Pod manifest with ConfigMap (fastregistry.yaml)
 - **refactor:** Replace build-rose.sh with build.sh (registry push workflow)
-- **refactor:** Replace deploy-rose.sh/deploy-g10.sh with deploy.sh (mkube registry poll)
+- **refactor:** Replace deploy scripts with deploy.sh (build + push)
 - **chore:** Add VERSION file (0.6.0)
 - **chore:** Remove mkpod Python deployment scripts
+- **chore:** Remove g10 replica (single instance only)
 
 ## [v0.6.0] — 2026-02-18
 
