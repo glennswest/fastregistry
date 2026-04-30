@@ -2,8 +2,35 @@
 # Deploy via: oc --server=http://mkube.gt.lo:8082 apply -f fastregistry.yaml
 #
 # First-time setup:
-#   Upload pull-secret.json to the secrets volume on rose1:
-#     The volume path will be shown by: oc --server=http://mkube.gt.lo:8082 describe pod fastregistry -n g10
+#   Place pull-secret.json on rose1 at:
+#     /raid1/volumes/pvc/g10_fastregistry-secrets/pull-secret.json
+#   (mkube resolves PVC <ns>/<name> to /raid1/volumes/pvc/<ns>_<name>)
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fastregistry-data
+  namespace: g10
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 500Gi
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fastregistry-secrets
+  namespace: g10
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Mi
+
+---
 
 apiVersion: v1
 kind: ConfigMap
@@ -66,6 +93,12 @@ spec:
     - name: config
       configMap:
         name: fastregistry-config
+    - name: data
+      persistentVolumeClaim:
+        claimName: fastregistry-data
+    - name: secrets
+      persistentVolumeClaim:
+        claimName: fastregistry-secrets
   containers:
     - name: fastregistry
       image: registry.gt.lo:5000/fastregistry:edge
