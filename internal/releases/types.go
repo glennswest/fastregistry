@@ -49,13 +49,23 @@ type MajorMinorGroup struct {
 	CloningCount   int
 }
 
-// CloneProgress tracks the progress of an active clone operation
+// CloneProgress tracks the progress of an active clone operation.
+// Phase progression: "pulling_manifest" → "pulling_blobs" (release image
+// itself) → "mirroring_components" (all image-references components) →
+// "extracting" (binaries). The mirror phase is the slowest because OCP
+// releases reference ~190+ component images.
 type CloneProgress struct {
 	Version     string  `json:"version"`
-	Phase       string  `json:"phase"` // "pulling_manifest", "pulling_blobs", "extracting"
+	Phase       string  `json:"phase"`
 	TotalBlobs  int     `json:"total_blobs"`
 	SyncedBlobs int     `json:"synced_blobs"`
 	TotalBytes  int64   `json:"total_bytes"`
 	SyncedBytes int64   `json:"synced_bytes"`
 	PercentDone float64 `json:"percent_done"`
+
+	// Component-mirror tracking (only meaningful during "mirroring_components")
+	TotalComponents   int     `json:"total_components"`
+	MirroredComponents int    `json:"mirrored_components"`
+	ComponentPercent   float64 `json:"component_percent"`
+	CurrentComponent   string  `json:"current_component"`
 }

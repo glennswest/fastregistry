@@ -242,7 +242,7 @@ func (m *Manager) CloneRelease(ctx context.Context, version string) error {
 				fmt.Sprintf("Cloning release %s (%s)", ver, arch), nil)
 		}
 
-		// Clone
+		// Phase 1: Clone the release image (manifest + its own blobs).
 		progress, err := m.cloner.Clone(m.ctx, ver, arch)
 		if err != nil {
 			log.Printf("Clone failed for %s: %v", ver, err)
@@ -262,16 +262,51 @@ func (m *Manager) CloneRelease(ctx context.Context, version string) error {
 			return
 		}
 
-		rel.State = StateExtracting
+		// Phase 2: Mirror all component images referenced by this release into
+		// local blob storage. Without this, extraction would have to fetch from
+		// upstream mid-flight and any interruption would leave a half-populated
+		// repo whose artifacts are not reusable. Doing it here keeps the
+		// invariant: state=cloned ⇒ release is fully self-contained locally.
+		refs, refsErr := m.extractor.FindReleaseComponents(ver, arch)
+		if refsErr != nil {
+			log.Printf("Mirror phase: failed to read image-references for %s: %v", ver, refsErr)
+			rel.State = StateFailed
+			rel.Error = "mirror: " + refsErr.Error()
+			m.saveRelease(rel)
+			return
+		}
+		if err := m.cloner.MirrorComponents(m.ctx, ver, refs, progress); err != nil {
+			log.Printf("Mirror failed for %s: %v", ver, err)
+			rel.State = StateFailed
+			rel.Error = "mirror: " + err.Error()
+			m.saveRelease(rel)
+			if m.eventStore != nil {
+				m.eventStore.RecordEvent(events.EventReleaseFailed, events.SeverityError, ver,
+					fmt.Sprintf("Mirror failed: %v", err), nil)
+				m.eventStore.SaveCloneHistory(events.CloneHistoryEntry{
+					Version: ver, Phase: "mirror", Error: err.Error(),
+					StartedAt: cloneStart, CompletedAt: time.Now(),
+					Duration:   time.Since(cloneStart).Round(time.Second).String(),
+					TotalBlobs: progress.TotalBlobs, TotalBytes: progress.TotalBytes,
+					Success: false,
+				})
+			}
+			return
+		}
+
+		rel.State = StateCloned
 		rel.ClonedAt = time.Now()
 		m.saveRelease(rel)
 
 		if m.eventStore != nil {
 			m.eventStore.RecordEvent(events.EventReleaseCloned, events.SeveritySuccess, ver,
-				fmt.Sprintf("Cloned %d blobs (%d bytes)", progress.TotalBlobs, progress.TotalBytes), nil)
+				fmt.Sprintf("Cloned + mirrored %d components (%d release blobs, %d bytes)",
+					len(refs), progress.TotalBlobs, progress.TotalBytes), nil)
 		}
 
-		// Extract
+		// Phase 3: Extract artifacts. Pure local read from the mirror.
+		rel.State = StateExtracting
+		m.saveRelease(rel)
 		artifacts, err := m.extractor.Extract(m.ctx, ver, arch)
 		if err != nil {
 			log.Printf("Extraction failed for %s: %v", ver, err)

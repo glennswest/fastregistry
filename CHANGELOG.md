@@ -11,6 +11,9 @@
 - **chore:** Moved hostname from `fastregistry.gw.lo` to `fastregistry.g8.lo` (deleted record from gw.lo zone, created A record in g8.lo zone → `192.168.10.50`)
 - **docs:** Update RELEASES.md examples to use `fastregistry.g8.lo:5000`
 - **fix:** Bundle CA certificates into the rose container (`Dockerfile.rose`) so outbound HTTPS to quay.io / registry.redhat.io / ghcr.io for release discovery and clone works (previous scratch image had no `/etc/ssl/certs/ca-certificates.crt`, causing `x509: certificate signed by unknown authority` on every upstream call)
+- **BREAKING:** Split release pipeline into clone → mirror → extract phases. Previously `clone` only pulled the release manifest, and `extract` did both component-image mirroring AND binary extraction in one step — meaning any interruption (e.g. container restart) left the local repo half-populated and artifacts unusable. Now the mirror of all ~190 component images runs as part of the clone phase; `state=cloned` is only reached when the release is fully self-contained on disk. Extraction is then a pure local read.
+- **feat:** Mirror phase exposes live progress (`total_components`, `mirrored_components`, `component_percent`, `current_component`) on the existing `CloneProgress` struct, surfaced via `/admin/releases/<v>/status` and the UI.
+- **feat:** Component manifests and blobs are linked to a synthetic `<localRepo>-components` repository (e.g. `openshift/release-components`) so they appear in the registry catalog and can be pulled by digest.
 
 ### 2026-02-24
 - **feat:** Migrate deployment from mkpod to mkube

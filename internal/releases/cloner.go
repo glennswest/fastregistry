@@ -1,6 +1,7 @@
 package releases
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -497,6 +498,19 @@ func (c *Cloner) PullComponentImage(ctx context.Context, imageRef string) ([]byt
 		return nil, err
 	}
 
+	// Store the manifest in the local blob store keyed by its own digest.
+	// Component images are referenced from image-references by `repo@sha256:<d>`,
+	// so future lookups (extract, on-demand pull) can read it locally without network.
+	mDigest := digest.FromBytes(manifestBytes)
+	if !c.blobs.Exists(mDigest) {
+		if err := c.blobs.Put(mDigest, bytes.NewReader(manifestBytes), int64(len(manifestBytes))); err != nil {
+			return nil, fmt.Errorf("storing component manifest blob: %w", err)
+		}
+	}
+	// Link to a synthetic repo so it shows up in catalog and is reachable
+	// at /v2/openshift/release-components/manifests/<sha256:digest>.
+	c.metadata.LinkBlobToRepo(mDigest, c.localRepo+"-components")
+
 	// Parse manifest for blobs to sync
 	var manifest struct {
 		Config struct {
@@ -538,7 +552,9 @@ func (c *Cloner) PullComponentImage(ctx context.Context, imageRef string) ([]byt
 			}
 			if err := c.syncBlobFromRepo(ctx, registry, repo, dgst, size); err != nil {
 				errCh <- fmt.Errorf("syncing blob %s: %w", dgstStr[:min(12, len(dgstStr))], err)
+				return
 			}
+			c.metadata.LinkBlobToRepo(dgst, c.localRepo+"-components")
 		}(layer.Digest, layer.Size)
 	}
 
@@ -552,8 +568,88 @@ func (c *Cloner) PullComponentImage(ctx context.Context, imageRef string) ([]byt
 	default:
 	}
 
+	if manifest.Config.Digest != "" {
+		if cfgDgst, err := digest.Parse(manifest.Config.Digest); err == nil {
+			c.metadata.LinkBlobToRepo(cfgDgst, c.localRepo+"-components")
+		}
+	}
+
 	log.Printf("Component image pulled successfully (%d layers)", len(manifest.Layers))
 	return manifestBytes, nil
+}
+
+// MirrorComponents pulls every component image referenced by a release
+// (manifest + config + all layers) into the local blob store.
+// This is the "full mirror" phase: after it returns nil, the release is
+// completely self-contained locally and extraction can run with no network.
+//
+// If progress is non-nil, it's updated as each component is mirrored so the
+// /admin/releases/<v>/status endpoint can surface live counts/percentage.
+func (c *Cloner) MirrorComponents(ctx context.Context, version string, refs map[string]string, progress *CloneProgress) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	total := len(refs)
+	log.Printf("Mirroring %d component images for release %s", total, version)
+
+	if progress != nil {
+		c.mu.Lock()
+		progress.Phase = "mirroring_components"
+		progress.TotalComponents = total
+		progress.MirroredComponents = 0
+		progress.ComponentPercent = 0
+		c.mu.Unlock()
+	}
+
+	// Sequential to avoid hammering upstream and overwhelming bandwidth;
+	// each PullComponentImage already syncs its layers concurrently.
+	mirrored := 0
+	for component, ref := range refs {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		if progress != nil {
+			c.mu.Lock()
+			progress.CurrentComponent = component
+			c.mu.Unlock()
+		}
+
+		log.Printf("[mirror %d/%d] component %q: %s", mirrored+1, total, component, truncateStr(ref, 60))
+		if _, err := c.PullComponentImage(ctx, ref); err != nil {
+			return fmt.Errorf("mirroring component %s: %w", component, err)
+		}
+		mirrored++
+
+		if progress != nil {
+			c.mu.Lock()
+			progress.MirroredComponents = mirrored
+			progress.ComponentPercent = float64(mirrored) / float64(total) * 100
+			c.mu.Unlock()
+		}
+	}
+	log.Printf("Mirrored %d component images successfully", mirrored)
+	return nil
+}
+
+// LookupComponentManifest reads a component manifest from the local blob store
+// using the digest embedded in an image reference (e.g. "quay.io/...@sha256:abc").
+// Returns the raw manifest bytes; callers parse as needed.
+func (c *Cloner) LookupComponentManifest(imageRef string) ([]byte, error) {
+	_, _, ref := parseImageRef(imageRef)
+	if ref == "" {
+		return nil, fmt.Errorf("image reference has no digest: %s", imageRef)
+	}
+	dgst, err := digest.Parse(ref)
+	if err != nil {
+		return nil, fmt.Errorf("parsing digest %q: %w", ref, err)
+	}
+	r, _, err := c.blobs.Get(dgst)
+	if err != nil {
+		return nil, fmt.Errorf("reading manifest blob %s: %w", dgst, err)
+	}
+	defer r.Close()
+	return io.ReadAll(r)
 }
 
 // syncBlobFromRepo syncs a blob from a specific repo on the given registry.

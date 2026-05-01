@@ -142,7 +142,10 @@ func (e *Extractor) Extract(ctx context.Context, version, arch string) ([]Artifa
 		log.Printf("Warning: could not find image-references: %v", err)
 	}
 
-	// Step 2: Pull and extract from component images
+	// Step 2: Extract from component images. Manifests must already be in the
+	// local blob store (populated during the clone/mirror phase). This means
+	// extraction is a pure local operation — no network calls, no partial-mirror
+	// risk.
 	if refs != nil && e.cloner != nil {
 		for component, rules := range desiredComponents {
 			imageRef, ok := refs[component]
@@ -152,7 +155,7 @@ func (e *Extractor) Extract(ctx context.Context, version, arch string) ([]Artifa
 			}
 
 			log.Printf("Extracting from component %q: %s", component, truncateStr(imageRef, 60))
-			found, err := e.extractFromComponent(ctx, imageRef, outDir, rules)
+			found, err := e.extractFromComponentLocal(imageRef, outDir, rules)
 			if err != nil {
 				log.Printf("Warning: failed to extract from component %q: %v", component, err)
 				continue
@@ -261,11 +264,13 @@ func (e *Extractor) scanLayerForImageReferences(dgst digest.Digest) (map[string]
 	return nil, nil
 }
 
-// extractFromComponent pulls a component image and extracts matching files.
-func (e *Extractor) extractFromComponent(ctx context.Context, imageRef, outDir string, rules []extractRule) ([]Artifact, error) {
-	manifestBytes, err := e.cloner.PullComponentImage(ctx, imageRef)
+// extractFromComponentLocal reads the component manifest from local blobs
+// (populated by the mirror phase), then extracts matching files from each
+// referenced layer. No network access.
+func (e *Extractor) extractFromComponentLocal(imageRef, outDir string, rules []extractRule) ([]Artifact, error) {
+	manifestBytes, err := e.cloner.LookupComponentManifest(imageRef)
 	if err != nil {
-		return nil, fmt.Errorf("pulling component image: %w", err)
+		return nil, fmt.Errorf("loading local component manifest: %w (clone phase may have been interrupted before mirror completed)", err)
 	}
 
 	var manifest struct {
@@ -293,6 +298,40 @@ func (e *Extractor) extractFromComponent(ctx context.Context, imageRef, outDir s
 	}
 
 	return artifacts, nil
+}
+
+// FindReleaseComponents reads the release manifest from local storage,
+// locates the image-references file in its layers, and returns the map of
+// component-name → upstream image reference. Used by the manager to drive
+// the mirror phase before extraction.
+func (e *Extractor) FindReleaseComponents(version, arch string) (map[string]string, error) {
+	tag := version + "-" + arch
+	meta, err := e.metadata.GetManifest(e.localRepo, tag)
+	if err != nil {
+		return nil, fmt.Errorf("getting release manifest: %w", err)
+	}
+	r, _, err := e.blobs.Get(meta.Digest)
+	if err != nil {
+		return nil, fmt.Errorf("reading release manifest: %w", err)
+	}
+	manifestBytes, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		return nil, err
+	}
+	var manifest struct {
+		Layers []struct {
+			Digest string `json:"digest"`
+		} `json:"layers"`
+	}
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		return nil, err
+	}
+	digests := make([]string, 0, len(manifest.Layers))
+	for _, l := range manifest.Layers {
+		digests = append(digests, l.Digest)
+	}
+	return e.findImageReferences(digests)
 }
 
 func (e *Extractor) extractFromComponentLayer(dgst digest.Digest, outDir string, rules []extractRule) ([]Artifact, error) {
