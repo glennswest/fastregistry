@@ -10,6 +10,7 @@
 ### 2026-05-01
 - **chore:** Moved hostname from `fastregistry.gw.lo` to `fastregistry.g8.lo` (deleted record from gw.lo zone, created A record in g8.lo zone → `192.168.10.50`)
 - **docs:** Update RELEASES.md examples to use `fastregistry.g8.lo:5000`
+- **fix:** Bundle CA certificates into the rose container (`Dockerfile.rose`) so outbound HTTPS to quay.io / registry.redhat.io / ghcr.io for release discovery and clone works (previous scratch image had no `/etc/ssl/certs/ca-certificates.crt`, causing `x509: certificate signed by unknown authority` on every upstream call)
 
 ### 2026-02-24
 - **feat:** Migrate deployment from mkpod to mkube

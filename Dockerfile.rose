@@ -1,7 +1,14 @@
 # Scratch container for MikroTik RouterOS
 # Build with: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o fastregistry ./cmd/fastregistry
 
+# CA bundle stage — needed so the runtime can verify quay.io / registry.redhat.io / ghcr.io TLS certs
+FROM alpine:3 AS certs
+RUN apk --no-cache add ca-certificates
+
 FROM scratch
+
+# Trusted root CAs for outbound HTTPS (release discovery, image clone, etc.)
+COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # Copy the pre-built static binary
 COPY fastregistry /fastregistry
