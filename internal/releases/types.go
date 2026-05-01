@@ -24,9 +24,31 @@ type Release struct {
 	LocalDigest    string       `json:"local_digest,omitempty"`
 	DiscoveredAt   time.Time    `json:"discovered_at"`
 	ClonedAt       time.Time    `json:"cloned_at,omitempty"`
+	VerifiedAt     time.Time    `json:"verified_at,omitempty"`
 	Size           int64        `json:"size"`
 	Error          string       `json:"error,omitempty"`
 	Artifacts      []Artifact   `json:"artifacts,omitempty"`
+
+	// Verify summary attached to the release once the pipeline has run a
+	// completeness check (release blobs + component manifests + component
+	// blobs all present locally). Populated automatically before the state
+	// transitions to "ready"; if any blob is missing, the release goes to
+	// "failed" instead and Verify carries the diagnostic counts.
+	Verify *VerifySummary `json:"verify,omitempty"`
+}
+
+// VerifySummary is the trimmed shape of VerifyResult that gets persisted on
+// a Release so the UI can show a "verified" badge with details without
+// re-walking the metadata store on every page load.
+type VerifySummary struct {
+	Complete               bool      `json:"complete"`
+	At                     time.Time `json:"at"`
+	ReleaseBlobsExpected   int       `json:"release_blobs_expected"`
+	ReleaseBlobsPresent    int       `json:"release_blobs_present"`
+	ComponentsExpected     int       `json:"components_expected"`
+	ComponentManifestsOK   int       `json:"component_manifests_ok"`
+	ComponentBlobsExpected int       `json:"component_blobs_expected"`
+	ComponentBlobsPresent  int       `json:"component_blobs_present"`
 }
 
 // Artifact represents an extracted file from a release

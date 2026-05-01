@@ -12,6 +12,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	// Embed the IANA timezone database into the binary so TZ=America/Chicago
+	// works in the scratch/stormdbase container without /usr/share/zoneinfo.
+	_ "time/tzdata"
 
 	"github.com/gwest/fastregistry/config"
 	"github.com/gwest/fastregistry/internal/api"

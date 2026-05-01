@@ -348,11 +348,60 @@ func (m *Manager) CloneRelease(ctx context.Context, version string) error {
 			return
 		}
 
+		// Phase 4 (gate): verify the mirror is fully self-contained before
+		// declaring the release ready. Any missing blob → state=failed with
+		// diagnostic counts so the UI can show why.
+		m.logf("Phase 4/4: verifying mirror completeness for %s-%s", ver, arch)
+		vRes, vErr := m.VerifyMirror(m.ctx, ver, arch)
+		if vErr != nil || vRes == nil || !vRes.Complete {
+			if vRes != nil {
+				rel.Verify = &VerifySummary{
+					Complete:               vRes.Complete,
+					At:                     time.Now(),
+					ReleaseBlobsExpected:   vRes.ReleaseBlobsExpected,
+					ReleaseBlobsPresent:    vRes.ReleaseBlobsPresent,
+					ComponentsExpected:     vRes.ComponentsExpected,
+					ComponentManifestsOK:   vRes.ComponentManifestsOK,
+					ComponentBlobsExpected: vRes.ComponentBlobsExpected,
+					ComponentBlobsPresent:  vRes.ComponentBlobsPresent,
+				}
+			}
+			rel.State = StateFailed
+			if vErr != nil {
+				rel.Error = "verify: " + vErr.Error()
+			} else {
+				rel.Error = fmt.Sprintf("verify: incomplete — release %d/%d, components %d/%d, component blobs %d/%d",
+					vRes.ReleaseBlobsPresent, vRes.ReleaseBlobsExpected,
+					vRes.ComponentManifestsOK, vRes.ComponentsExpected,
+					vRes.ComponentBlobsPresent, vRes.ComponentBlobsExpected)
+			}
+			m.logf("Verification FAILED for %s: %s", ver, rel.Error)
+			m.saveRelease(rel)
+			if m.eventStore != nil {
+				m.eventStore.RecordEvent(events.EventReleaseFailed, events.SeverityError, ver,
+					rel.Error, nil)
+			}
+			return
+		}
+
+		rel.Verify = &VerifySummary{
+			Complete:               true,
+			At:                     time.Now(),
+			ReleaseBlobsExpected:   vRes.ReleaseBlobsExpected,
+			ReleaseBlobsPresent:    vRes.ReleaseBlobsPresent,
+			ComponentsExpected:     vRes.ComponentsExpected,
+			ComponentManifestsOK:   vRes.ComponentManifestsOK,
+			ComponentBlobsExpected: vRes.ComponentBlobsExpected,
+			ComponentBlobsPresent:  vRes.ComponentBlobsPresent,
+		}
+		rel.VerifiedAt = rel.Verify.At
 		rel.State = StateReady
 		rel.Artifacts = artifacts
 		rel.Error = ""
 		m.saveRelease(rel)
 
+		m.logf("Release %s is ready and verified: %d release blobs, %d components, %d component blobs",
+			ver, vRes.ReleaseBlobsPresent, vRes.ComponentsExpected, vRes.ComponentBlobsPresent)
 		log.Printf("Release %s is ready with %d artifacts", ver, len(artifacts))
 
 		if m.eventStore != nil {

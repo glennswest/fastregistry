@@ -85,7 +85,7 @@
         {{if .Content.RecentEvents}}<span class="tab-count">{{len .Content.RecentEvents}}</span>{{end}}
       </button>
       <button class="release-tab" :class="{ active: tab === 'usage' }" @click="tab = 'usage'">
-        Usage
+        Client Downloads
       </button>
       <button class="release-tab" :class="{ active: tab === 'log' }" @click="tab = 'log'">
         Log
@@ -342,6 +342,10 @@
 
     <!-- Usage Tab -->
     <div x-show="tab === 'usage'" x-cloak>
+      <div style="margin-top:16px;padding:10px 14px;background:var(--bg-tertiary);border-left:3px solid var(--accent-blue);font-size:13px;color:var(--text-secondary);">
+        <strong>Client downloads</strong> — counts and bandwidth for clients that fetched extracted artifacts (oc, openshift-install, coreos.iso, agent.iso) from <code>/files/...</code>.
+        Upstream mirror activity (bytes pulled from quay.io during clone+mirror) is separate and shown in the release detail page and Log tab.
+      </div>
       <div x-data="{ usageTab: 'overview' }" style="margin-top:16px;">
         <!-- Usage subtabs -->
         <div class="version-picker" style="margin-bottom:16px;">

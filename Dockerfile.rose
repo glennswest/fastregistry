@@ -6,8 +6,10 @@
 # them outbound TLS fails with x509 errors and Go's time.Local silently
 # falls back to UTC, ignoring TZ=America/Chicago).
 #
-# To skip the in-container build locally, pre-compile the binary and pass
-# `--build-arg PREBUILT=true` (build.sh does this).
+# Note: tz data is also embedded in the binary via `_ "time/tzdata"` so
+# even when the /usr/share/zoneinfo mount/COPY is missing (e.g., when we
+# move to a stormdbase-based image with a shared certs PVC), Local()
+# still resolves America/Chicago correctly.
 
 FROM golang:1.24-alpine AS builder
 ARG VERSION=dev
