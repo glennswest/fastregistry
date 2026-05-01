@@ -577,10 +577,14 @@ func (c *Cloner) PullComponentImage(ctx context.Context, imageRef string) ([]byt
 		return nil, fmt.Errorf("parsing component manifest: %w", err)
 	}
 
-	// Register the component manifest in the metadata store under a synthetic
-	// "<localRepo>-components" repo, keyed by its digest. This makes
-	// `GET /v2/<localRepo>-components/manifests/sha256:<d>` work — exactly
-	// what an OpenShift installer with imageContentSources rewrites to.
+	// Register the component manifest in the metadata store under the same
+	// localRepo as the release itself, keyed by its digest. OpenShift's
+	// `oc adm release mirror` and imageContentSources both expect the
+	// release image AND its component images to live in a single mirror
+	// repo (different upstream paths collapse to the same destination):
+	//   quay.io/openshift-release-dev/ocp-release         -> <localRepo>
+	//   quay.io/openshift-release-dev/ocp-v4.0-art-dev    -> <localRepo>
+	// So a digest-pull of any component lands at /v2/<localRepo>/manifests/sha256:<d>.
 	mediaType := manifest.MediaType
 	if mediaType == "" {
 		mediaType = "application/vnd.docker.distribution.manifest.v2+json"
@@ -594,11 +598,10 @@ func (c *Cloner) PullComponentImage(ctx context.Context, imageRef string) ([]byt
 	for _, l := range manifest.Layers {
 		mmeta.Layers = append(mmeta.Layers, l.Digest)
 	}
-	if err := c.metadata.PutManifest(c.localRepo+"-components", mDigest.String(), mmeta); err != nil {
+	if err := c.metadata.PutManifest(c.localRepo, mDigest.String(), mmeta); err != nil {
 		c.logf("Warning: registering component manifest %s in metadata: %v", mDigest.String()[:19], err)
 	}
-	// Also link the manifest blob (so blob-by-digest reads work too)
-	c.metadata.LinkBlobToRepo(mDigest, c.localRepo+"-components")
+	c.metadata.LinkBlobToRepo(mDigest, c.localRepo)
 
 	// Sync config blob
 	if manifest.Config.Digest != "" {
@@ -632,7 +635,7 @@ func (c *Cloner) PullComponentImage(ctx context.Context, imageRef string) ([]byt
 				errCh <- fmt.Errorf("syncing blob %s: %w", dgstStr[:min(12, len(dgstStr))], err)
 				return
 			}
-			c.metadata.LinkBlobToRepo(dgst, c.localRepo+"-components")
+			c.metadata.LinkBlobToRepo(dgst, c.localRepo)
 		}(layer.Digest, layer.Size)
 	}
 
@@ -648,7 +651,7 @@ func (c *Cloner) PullComponentImage(ctx context.Context, imageRef string) ([]byt
 
 	if manifest.Config.Digest != "" {
 		if cfgDgst, err := digest.Parse(manifest.Config.Digest); err == nil {
-			c.metadata.LinkBlobToRepo(cfgDgst, c.localRepo+"-components")
+			c.metadata.LinkBlobToRepo(cfgDgst, c.localRepo)
 		}
 	}
 
