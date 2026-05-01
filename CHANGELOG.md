@@ -7,6 +7,10 @@
 - **chore:** Wiped legacy data and brought the pod up clean: pull-secret.json placed at `/raid1/volumes/pvc/g10_fastregistry-secrets/pull-secret.json`, fastregistry serving at `192.168.10.50:5000` (HTTP 200, empty catalog ready for re-mirror)
 - **chore:** Updated `fastregistry.gw.lo` A record (gw.lo zone) to `192.168.10.50` so install-config consumers reach the new pod
 
+### 2026-05-01
+- **chore:** Moved hostname from `fastregistry.gw.lo` to `fastregistry.g8.lo` (deleted record from gw.lo zone, created A record in g8.lo zone → `192.168.10.50`)
+- **docs:** Update RELEASES.md examples to use `fastregistry.g8.lo:5000`
+
 ### 2026-02-24
 - **feat:** Migrate deployment from mkpod to mkube
 - **feat:** Add mkube Pod manifest with ConfigMap (fastregistry.yaml)

@@ -17,12 +17,12 @@ FastRegistry provides complete OpenShift release management including discovery,
 
 ```bash
 # Clone a release (discovers, downloads, and extracts artifacts)
-curl -X POST "http://fastregistry.gw.lo:5000/admin/releases/clone" \
+curl -X POST "http://fastregistry.g8.lo:5000/admin/releases/clone" \
   -H "Content-Type: application/json" \
   -d '{"version": "4.21.0-x86_64"}'
 
 # Check status
-curl -s "http://fastregistry.gw.lo:5000/admin/releases/4.21.0-x86_64/status" | jq
+curl -s "http://fastregistry.g8.lo:5000/admin/releases/4.21.0-x86_64/status" | jq
 ```
 
 Or use the mirror script:
@@ -35,7 +35,7 @@ Or use the mirror script:
 
 Once a release is ready, artifacts are available at:
 ```
-http://fastregistry.gw.lo:5000/files/releases/<version>/<artifact>
+http://fastregistry.g8.lo:5000/files/releases/<version>/<artifact>
 ```
 
 Available artifacts:
@@ -53,7 +53,7 @@ Available artifacts:
 Create a bootable agent ISO by posting your install configs:
 
 ```bash
-curl -X POST "http://fastregistry.gw.lo:5000/admin/releases/4.21.0-x86_64/iso" \
+curl -X POST "http://fastregistry.g8.lo:5000/admin/releases/4.21.0-x86_64/iso" \
   -H "Content-Type: application/json" \
   -d "{
     \"install_config\": $(cat install-config.yaml | jq -Rs),
@@ -66,7 +66,7 @@ Response:
 {
   "id": "48548d80-10f7-424f-aab7-1903b22c494d",
   "iso_url": "/files/installs/48548d80-10f7-424f-aab7-1903b22c494d/agent.iso",
-  "full_url": "http://fastregistry.gw.lo:5000/files/installs/48548d80-10f7-424f-aab7-1903b22c494d/agent.iso"
+  "full_url": "http://fastregistry.g8.lo:5000/files/installs/48548d80-10f7-424f-aab7-1903b22c494d/agent.iso"
 }
 ```
 
@@ -75,7 +75,7 @@ The `full_url` can be used directly for PXE sanboot.
 ### 4. Copy Artifacts to Remote Server
 
 ```bash
-curl -X POST "http://fastregistry.gw.lo:5000/admin/releases/4.21.0-x86_64/copy" \
+curl -X POST "http://fastregistry.g8.lo:5000/admin/releases/4.21.0-x86_64/copy" \
   -H "Content-Type: application/json" \
   -d '{"artifact": "coreos.iso", "destination": "root@pxe.gw.lo:/srv/tftp/iso/"}'
 ```
@@ -156,7 +156,7 @@ For ISO generation, the server needs:
 
 Access the releases dashboard at:
 ```
-http://fastregistry.gw.lo:5000/ui/releases
+http://fastregistry.g8.lo:5000/ui/releases
 ```
 
 Features:
@@ -188,7 +188,7 @@ rendezvousIP: 192.168.1.100
 EOF
 
 # 2. Generate agent ISO
-ISO_URL=$(curl -s -X POST "http://fastregistry.gw.lo:5000/admin/releases/4.21.0-x86_64/iso" \
+ISO_URL=$(curl -s -X POST "http://fastregistry.g8.lo:5000/admin/releases/4.21.0-x86_64/iso" \
   -H "Content-Type: application/json" \
   -d "{
     \"install_config\": $(cat install-config.yaml | jq -Rs),
