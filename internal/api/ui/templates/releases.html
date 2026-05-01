@@ -496,10 +496,19 @@
   <script>
     function releaseBrowser() {
       var groups = {{safeJS .Content.GroupsJSON}};
+      // Persist tab + selected major.minor in localStorage so the 10-second
+      // hx-trigger refresh of #releases-browser doesn't snap back to Browse.
+      var savedTab = localStorage.getItem('fr.releasesTab') || 'browse';
+      var savedMM  = localStorage.getItem('fr.releasesMM');
+      var defaultMM = groups.length > 0 ? groups[0] : '';
       return {
-        tab: 'browse',
-        selectedMM: groups.length > 0 ? groups[0] : '',
-        groups: groups
+        tab: savedTab,
+        selectedMM: (savedMM && groups.indexOf(savedMM) >= 0) ? savedMM : defaultMM,
+        groups: groups,
+        init() {
+          this.$watch('tab', v => localStorage.setItem('fr.releasesTab', v));
+          this.$watch('selectedMM', v => localStorage.setItem('fr.releasesMM', v));
+        }
       };
     }
   </script>

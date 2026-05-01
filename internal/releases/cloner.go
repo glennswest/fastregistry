@@ -28,10 +28,30 @@ type Cloner struct {
 	metadata   *storage.MetadataStore
 	client     *http.Client
 
+	// Concurrency tunables — defaults are calibrated for fast home internet.
+	// LayerConcurrency caps parallel blob fetches inside a single component.
+	// ComponentConcurrency caps parallel components mirrored at once.
+	// Total HTTP fan-out ≈ LayerConcurrency × ComponentConcurrency.
+	LayerConcurrency     int
+	ComponentConcurrency int
+
+	// logFunc receives high-level lifecycle messages (mirror progress, etc.)
+	// so they appear in the UI's Log tab. Set by Manager via NewManager.
+	logFunc func(string, ...interface{})
+
 	mu       sync.Mutex
 	active   map[string]*CloneProgress
 	tokens   map[string]tokenEntry // cached bearer tokens
 	authConf *dockerConfig
+}
+
+// logf forwards to logFunc if set, otherwise to the standard logger.
+func (c *Cloner) logf(format string, args ...interface{}) {
+	if c.logFunc != nil {
+		c.logFunc(format, args...)
+		return
+	}
+	log.Printf(format, args...)
 }
 
 type tokenEntry struct {
@@ -48,17 +68,22 @@ type dockerConfig struct {
 // NewCloner creates a new release image cloner
 func NewCloner(upstream, repository, localRepo, pullSecret string, blobs *storage.BlobStore, metadata *storage.MetadataStore) *Cloner {
 	return &Cloner{
-		upstream:   upstream,
-		repository: repository,
-		localRepo:  localRepo,
-		pullSecret: pullSecret,
-		blobs:      blobs,
-		metadata:   metadata,
+		upstream:             upstream,
+		repository:           repository,
+		localRepo:            localRepo,
+		pullSecret:           pullSecret,
+		blobs:                blobs,
+		metadata:             metadata,
+		LayerConcurrency:     10,
+		ComponentConcurrency: 4,
 		client: &http.Client{
 			Timeout: 30 * time.Minute,
 			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 20,
+				// Bumped to support the higher fan-out from MirrorComponents
+				// (multiple components × multiple layers each).
+				MaxIdleConns:        200,
+				MaxIdleConnsPerHost: 50,
+				MaxConnsPerHost:     50,
 				IdleConnTimeout:     90 * time.Second,
 			},
 		},
@@ -145,7 +170,11 @@ func (c *Cloner) Clone(ctx context.Context, version, arch string) (*CloneProgres
 	}
 
 	// Sync layers with concurrency
-	sem := make(chan struct{}, 5)
+	conc := c.LayerConcurrency
+	if conc <= 0 {
+		conc = 10
+	}
+	sem := make(chan struct{}, conc)
 	errCh := make(chan error, len(manifest.Layers))
 
 	for _, layer := range manifest.Layers {
@@ -561,8 +590,12 @@ func (c *Cloner) PullComponentImage(ctx context.Context, imageRef string) ([]byt
 	}
 
 	// Sync layers concurrently
-	log.Printf("Syncing %d layers for component", len(manifest.Layers))
-	sem := make(chan struct{}, 5)
+	conc := c.LayerConcurrency
+	if conc <= 0 {
+		conc = 10
+	}
+	c.logf("Syncing %d layers for component (parallel=%d)", len(manifest.Layers), conc)
+	sem := make(chan struct{}, conc)
 	errCh := make(chan error, len(manifest.Layers))
 
 	for _, layer := range manifest.Layers {
@@ -603,18 +636,24 @@ func (c *Cloner) PullComponentImage(ctx context.Context, imageRef string) ([]byt
 }
 
 // MirrorComponents pulls every component image referenced by a release
-// (manifest + config + all layers) into the local blob store.
-// This is the "full mirror" phase: after it returns nil, the release is
-// completely self-contained locally and extraction can run with no network.
+// (manifest + config + all layers) into the local blob store. After it
+// returns nil, the release is completely self-contained locally and
+// extraction can run with no network.
 //
-// If progress is non-nil, it's updated as each component is mirrored so the
-// /admin/releases/<v>/status endpoint can surface live counts/percentage.
+// Components are mirrored in parallel up to ComponentConcurrency, and each
+// component's layers are pulled in parallel up to LayerConcurrency, so
+// effective fan-out is the product of the two. Progress is updated atomically
+// as each component completes.
 func (c *Cloner) MirrorComponents(ctx context.Context, version string, refs map[string]string, progress *CloneProgress) error {
 	if len(refs) == 0 {
 		return nil
 	}
 	total := len(refs)
-	log.Printf("Mirroring %d component images for release %s", total, version)
+	workers := c.ComponentConcurrency
+	if workers <= 0 {
+		workers = 4
+	}
+	c.logf("Mirroring %d component images for release %s (parallel=%d)", total, version, workers)
 
 	if progress != nil {
 		c.mu.Lock()
@@ -622,40 +661,62 @@ func (c *Cloner) MirrorComponents(ctx context.Context, version string, refs map[
 		progress.TotalComponents = total
 		progress.MirroredComponents = 0
 		progress.ComponentPercent = 0
-		progress.PercentDone = 0 // re-purpose as current-phase % for UI
+		progress.PercentDone = 0
 		c.mu.Unlock()
 	}
 
-	// Sequential to avoid hammering upstream and overwhelming bandwidth;
-	// each PullComponentImage already syncs its layers concurrently.
-	mirrored := 0
+	type job struct{ component, ref string }
+	jobs := make(chan job, total)
 	for component, ref := range refs {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		if progress != nil {
-			c.mu.Lock()
-			progress.CurrentComponent = component
-			c.mu.Unlock()
-		}
-
-		log.Printf("[mirror %d/%d] component %q: %s", mirrored+1, total, component, truncateStr(ref, 60))
-		if _, err := c.PullComponentImage(ctx, ref); err != nil {
-			return fmt.Errorf("mirroring component %s: %w", component, err)
-		}
-		mirrored++
-
-		if progress != nil {
-			c.mu.Lock()
-			progress.MirroredComponents = mirrored
-			pct := float64(mirrored) / float64(total) * 100
-			progress.ComponentPercent = pct
-			progress.PercentDone = pct
-			c.mu.Unlock()
-		}
+		jobs <- job{component, ref}
 	}
-	log.Printf("Mirrored %d component images successfully", mirrored)
+	close(jobs)
+
+	var mirrored atomic.Int32
+	errCh := make(chan error, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+
+	for w := 0; w < workers; w++ {
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				if progress != nil {
+					c.mu.Lock()
+					progress.CurrentComponent = j.component
+					c.mu.Unlock()
+				}
+				idx := mirrored.Load() + 1
+				c.logf("[mirror %d/%d] component %q: %s", idx, total, j.component, truncateStr(j.ref, 60))
+				if _, err := c.PullComponentImage(ctx, j.ref); err != nil {
+					select {
+					case errCh <- fmt.Errorf("mirroring %s: %w", j.component, err):
+					default:
+					}
+					return
+				}
+				n := mirrored.Add(1)
+				if progress != nil {
+					c.mu.Lock()
+					progress.MirroredComponents = int(n)
+					pct := float64(n) / float64(total) * 100
+					progress.ComponentPercent = pct
+					progress.PercentDone = pct
+					c.mu.Unlock()
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+	if err := <-errCh; err != nil {
+		return err
+	}
+	c.logf("Mirrored %d component images successfully", mirrored.Load())
 	return nil
 }
 

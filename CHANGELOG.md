@@ -14,6 +14,10 @@
 - **BREAKING:** Split release pipeline into clone → mirror → extract phases. Previously `clone` only pulled the release manifest, and `extract` did both component-image mirroring AND binary extraction in one step — meaning any interruption (e.g. container restart) left the local repo half-populated and artifacts unusable. Now the mirror of all ~190 component images runs as part of the clone phase; `state=cloned` is only reached when the release is fully self-contained on disk. Extraction is then a pure local read.
 - **feat:** Mirror phase exposes live progress (`total_components`, `mirrored_components`, `component_percent`, `current_component`) on the existing `CloneProgress` struct, surfaced via `/admin/releases/<v>/status` and the UI.
 - **feat:** Component manifests and blobs are linked to a synthetic `<localRepo>-components` repository (e.g. `openshift/release-components`) so they appear in the registry catalog and can be pulled by digest.
+- **fix:** UI Releases tab persists the selected sub-tab and major.minor pill in localStorage so the 10-second auto-refresh stops snapping back to Browse.
+- **fix:** Bundle `tzdata` into `Dockerfile.rose`. The scratch image had no `/usr/share/zoneinfo`, so Go's `time.Local` silently fell back to UTC and all UI/log timestamps ignored the `TZ=America/Chicago` env var.
+- **feat:** Cloner/mirror activity (lifecycle, per-component mirror progress, layer-sync counts) now flows through the manager's log buffer so it appears in the UI Log tab instead of disappearing into stdout.
+- **perf:** Bumped concurrency: per-component layer fetches 5 → 10, components mirrored in parallel 1 → 4 (configurable via `Cloner.LayerConcurrency` / `Cloner.ComponentConcurrency`); HTTP client connection pool sized accordingly.
 
 ### 2026-02-24
 - **feat:** Migrate deployment from mkpod to mkube

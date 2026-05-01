@@ -56,6 +56,7 @@ func NewManager(cfg config.ReleasesConfig, blobs *storage.BlobStore, metadata *s
 		cancel:    cancel,
 	}
 	m.discovery.logFunc = m.logf
+	m.cloner.logFunc = m.logf
 	return m
 }
 
@@ -246,6 +247,7 @@ func (m *Manager) CloneRelease(ctx context.Context, version string) error {
 		}
 
 		// Phase 1: Clone the release image (manifest + its own blobs).
+		m.logf("Phase 1/3: cloning release image %s-%s", ver, arch)
 		progress, err := m.cloner.Clone(m.ctx, ver, arch)
 		if err != nil {
 			log.Printf("Clone failed for %s: %v", ver, err)
@@ -264,6 +266,8 @@ func (m *Manager) CloneRelease(ctx context.Context, version string) error {
 			}
 			return
 		}
+
+		m.logf("Release image cloned (%d blobs, %d bytes); reading image-references for mirror phase", progress.TotalBlobs, progress.TotalBytes)
 
 		// Phase 2: Mirror all component images referenced by this release into
 		// local blob storage. Without this, extraction would have to fetch from
@@ -308,6 +312,7 @@ func (m *Manager) CloneRelease(ctx context.Context, version string) error {
 		}
 
 		// Phase 3: Extract artifacts. Pure local read from the mirror.
+		m.logf("Phase 3/3: extracting artifacts for %s-%s from local mirror", ver, arch)
 		rel.State = StateExtracting
 		m.saveRelease(rel)
 		artifacts, err := m.extractor.Extract(m.ctx, ver, arch)
