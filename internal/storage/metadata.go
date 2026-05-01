@@ -209,6 +209,42 @@ func (ms *MetadataStore) DeleteManifest(repo, reference string) error {
 	})
 }
 
+// DeleteRepository removes all metadata associated with a repo: manifest
+// records, tags, repo-blob links, and the repo entry itself.
+// Content blobs are NOT deleted — they are content-addressable and may be
+// referenced by other repos. Run garbage collection separately if you want
+// to reclaim space from now-unreferenced blobs.
+func (ms *MetadataStore) DeleteRepository(repo string) error {
+	return ms.db.Update(func(txn *badger.Txn) error {
+		prefixes := [][]byte{
+			[]byte(prefixManifest + repo + ":"),
+			[]byte(prefixTag + repo + ":"),
+			[]byte(prefixRepoBlob + repo + ":"),
+		}
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		var keysToDelete [][]byte
+		for _, p := range prefixes {
+			for it.Seek(p); it.ValidForPrefix(p); it.Next() {
+				k := it.Item().KeyCopy(nil)
+				keysToDelete = append(keysToDelete, k)
+			}
+		}
+		// The repo entry itself (no trailing ':')
+		keysToDelete = append(keysToDelete, []byte(prefixRepo+repo))
+
+		for _, k := range keysToDelete {
+			if err := txn.Delete(k); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // ListTags returns all tags for a repository
 func (ms *MetadataStore) ListTags(repo string) ([]string, error) {
 	var tags []string

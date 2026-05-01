@@ -28,6 +28,7 @@ type Router struct {
 	certManager    *certs.Manager
 	filesHandler   http.Handler
 	exporter       *sync.Exporter
+	metadata       *storage.MetadataStore
 }
 
 // Authenticator defines the authentication interface
@@ -42,6 +43,7 @@ func NewRouter(blobs *storage.BlobStore, metadata *storage.MetadataStore, upload
 		v2Handler:   v2.NewHandler(blobs, metadata, uploads),
 		auth:        auth,
 		adminPrefix: "/admin",
+		metadata:    metadata,
 	}
 }
 
@@ -228,9 +230,39 @@ func (r *Router) handleAdmin(w http.ResponseWriter, req *http.Request) {
 	case strings.HasPrefix(path, "/certs"):
 		r.handleCerts(w, req)
 
+	case strings.HasPrefix(path, "/repositories/"):
+		r.handleRepository(w, req, strings.TrimPrefix(path, "/repositories/"))
+
 	default:
 		http.NotFound(w, req)
 	}
+}
+
+// handleRepository supports DELETE /admin/repositories/<repo> to purge a
+// repo's manifests, tags, and blob links from the metadata store. Blobs
+// themselves are content-addressable and stay on disk (run /admin/gc to
+// reclaim if they are now unreferenced).
+func (r *Router) handleRepository(w http.ResponseWriter, req *http.Request, repo string) {
+	if req.Method != http.MethodDelete {
+		http.Error(w, `{"error":"method not allowed; use DELETE"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if repo == "" {
+		http.Error(w, `{"error":"empty repo name"}`, http.StatusBadRequest)
+		return
+	}
+	if r.metadata == nil {
+		http.Error(w, `{"error":"metadata store not configured"}`, http.StatusInternalServerError)
+		return
+	}
+	if err := r.metadata.DeleteRepository(repo); err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "repository deleted from metadata (blobs retained)",
+		"repo":    repo,
+	})
 }
 
 func (r *Router) logRequest(req *http.Request, status int, duration time.Duration) {
