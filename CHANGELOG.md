@@ -3,7 +3,9 @@
 ## [Unreleased]
 
 ### 2026-04-30
-- **fix:** Declare missing `data` and `secrets` PVCs in fastregistry.yaml; the mkpod→mkube migration left the pod with no volume bindings, so the OCP mirror cache was never mounted (host data preserved at `/raid1/registry/{blobs,repositories,metadata,uploads}` from the previous deployment must be moved to `/raid1/volumes/pvc/g10_fastregistry-data/` before re-apply)
+- **fix:** Declare missing `data` and `secrets` PVCs in fastregistry.yaml so the mkpod→mkube pod actually has volume bindings (mkube resolves PVC `<ns>/<name>` to `/raid1/volumes/pvc/<ns>_<name>/`)
+- **chore:** Wiped legacy data and brought the pod up clean: pull-secret.json placed at `/raid1/volumes/pvc/g10_fastregistry-secrets/pull-secret.json`, fastregistry serving at `192.168.10.50:5000` (HTTP 200, empty catalog ready for re-mirror)
+- **chore:** Updated `fastregistry.gw.lo` A record (gw.lo zone) to `192.168.10.50` so install-config consumers reach the new pod
 
 ### 2026-02-24
 - **feat:** Migrate deployment from mkpod to mkube
