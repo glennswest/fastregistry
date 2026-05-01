@@ -16,16 +16,13 @@ IMAGE_EDGE="$REGISTRY/$REPO:edge"
 
 echo "Building $REPO $FULL_VERSION ..."
 
-# Cross-compile for ARM64 Linux
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
-  -ldflags="-s -w -X main.version=${FULL_VERSION}" \
-  -o fastregistry ./cmd/fastregistry
-
-# Build container image
-podman build --platform linux/arm64 -t "$IMAGE_EDGE" -f Dockerfile.rose .
-
-# Clean up binary
-rm -f fastregistry
+# Single multi-stage build (compile + scratch image with CA certs + tzdata).
+# The Dockerfile.rose builder stage cross-compiles ARM64 inside the build,
+# so no local `go build` step is needed.
+podman build --platform linux/arm64 \
+  --build-arg VERSION="${FULL_VERSION}" \
+  -t "$IMAGE_EDGE" \
+  -f Dockerfile.rose .
 
 echo ""
 echo "=== Build complete ==="

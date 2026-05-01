@@ -1,20 +1,32 @@
-# Scratch container for MikroTik RouterOS
-# Build with: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o fastregistry ./cmd/fastregistry
+# Single Dockerfile used by both local build.sh and the GitHub Actions
+# workflow that publishes to GHCR. Final image is FROM scratch.
+#
+# Builder stage compiles the static ARM64 binary; certs stage provides
+# /etc/ssl/certs and /usr/share/zoneinfo (scratch has neither — without
+# them outbound TLS fails with x509 errors and Go's time.Local silently
+# falls back to UTC, ignoring TZ=America/Chicago).
+#
+# To skip the in-container build locally, pre-compile the binary and pass
+# `--build-arg PREBUILT=true` (build.sh does this).
 
-# CA bundle + tzdata stage — scratch has neither, so logs default to UTC and
-# all outbound TLS would fail without it.
+FROM golang:1.24-alpine AS builder
+ARG VERSION=dev
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+    go build -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /out/fastregistry ./cmd/fastregistry
+
 FROM alpine:3 AS certs
 RUN apk --no-cache add ca-certificates tzdata
 
 FROM scratch
 
-# Trusted root CAs for outbound HTTPS (release discovery, image clone, etc.)
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-# Timezone data so log timestamps and cron schedules respect TZ=America/Chicago
 COPY --from=certs /usr/share/zoneinfo /usr/share/zoneinfo
-
-# Copy the pre-built static binary
-COPY fastregistry /fastregistry
+COPY --from=builder /out/fastregistry /fastregistry
 
 EXPOSE 5000
 
