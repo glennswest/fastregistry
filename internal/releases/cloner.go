@@ -79,11 +79,10 @@ func (c *Cloner) Clone(ctx context.Context, version, arch string) (*CloneProgres
 	c.active[version] = progress
 	c.mu.Unlock()
 
-	defer func() {
-		c.mu.Lock()
-		delete(c.active, version)
-		c.mu.Unlock()
-	}()
+	// NOTE: progress is intentionally NOT deleted on return — it stays in
+	// c.active so subsequent phases (mirror, extract) can keep updating it
+	// and the status endpoint can read it. The Manager calls FinishProgress()
+	// once the whole pipeline is done (success or failure).
 
 	// Load auth config
 	if err := c.loadAuth(); err != nil {
@@ -221,6 +220,15 @@ func (c *Cloner) Clone(ctx context.Context, version, arch string) (*CloneProgres
 	progress.PercentDone = 100
 	log.Printf("Cloned release %s (%d blobs, %d bytes)", tag, totalBlobs, totalBytes)
 	return progress, nil
+}
+
+// FinishProgress removes the progress entry once the entire clone+mirror
+// pipeline has completed (success or failure). The Manager calls this in a
+// defer so the in-memory progress map doesn't leak across runs.
+func (c *Cloner) FinishProgress(version string) {
+	c.mu.Lock()
+	delete(c.active, version)
+	c.mu.Unlock()
 }
 
 // GetProgress returns clone progress for a version, or nil if not active
@@ -598,6 +606,7 @@ func (c *Cloner) MirrorComponents(ctx context.Context, version string, refs map[
 		progress.TotalComponents = total
 		progress.MirroredComponents = 0
 		progress.ComponentPercent = 0
+		progress.PercentDone = 0 // re-purpose as current-phase % for UI
 		c.mu.Unlock()
 	}
 
@@ -624,7 +633,9 @@ func (c *Cloner) MirrorComponents(ctx context.Context, version string, refs map[
 		if progress != nil {
 			c.mu.Lock()
 			progress.MirroredComponents = mirrored
-			progress.ComponentPercent = float64(mirrored) / float64(total) * 100
+			pct := float64(mirrored) / float64(total) * 100
+			progress.ComponentPercent = pct
+			progress.PercentDone = pct
 			c.mu.Unlock()
 		}
 	}

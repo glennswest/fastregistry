@@ -236,6 +236,9 @@ func (m *Manager) CloneRelease(ctx context.Context, version string) error {
 	// Run async
 	go func() {
 		cloneStart := time.Now()
+		// Always release the in-memory progress slot when the whole
+		// pipeline (clone + mirror + extract) finishes.
+		defer m.cloner.FinishProgress(ver)
 
 		if m.eventStore != nil {
 			m.eventStore.RecordEvent(events.EventReleaseCloneStart, events.SeverityInfo, ver,
