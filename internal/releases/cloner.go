@@ -231,13 +231,29 @@ func (c *Cloner) FinishProgress(version string) {
 	c.mu.Unlock()
 }
 
-// GetProgress returns clone progress for a version, or nil if not active
+// GetProgress returns clone progress for a version, or nil if not active.
+// Accepts either bare version ("4.20.4") or tag ("4.20.4-x86_64") since the
+// API consistently uses tag while the manager stores under bare version.
 func (c *Cloner) GetProgress(version string) *CloneProgress {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if p, ok := c.active[version]; ok {
 		cp := *p
 		return &cp
+	}
+	// Fall back: strip arch suffix if caller passed a tag like "4.20.4-x86_64"
+	if i := strings.IndexByte(version, '-'); i > 0 {
+		if p, ok := c.active[version[:i]]; ok {
+			cp := *p
+			return &cp
+		}
+	}
+	// Or the reverse: caller passed bare version, entry stored under tag
+	for k, p := range c.active {
+		if strings.HasPrefix(k, version+"-") || k == version {
+			cp := *p
+			return &cp
+		}
 	}
 	return nil
 }
