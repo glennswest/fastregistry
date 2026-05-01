@@ -62,6 +62,11 @@ func (r *Router) handleReleases(w http.ResponseWriter, req *http.Request) {
 		version = strings.TrimSuffix(version, "/iso")
 		r.handleGenerateISO(w, req, version)
 
+	case strings.HasSuffix(path, "/verify"):
+		version := strings.TrimPrefix(path, "/")
+		version = strings.TrimSuffix(version, "/verify")
+		r.handleVerifyMirror(w, req, version)
+
 	default:
 		http.NotFound(w, req)
 	}
@@ -189,6 +194,49 @@ func (r *Router) handleExtract(w http.ResponseWriter, req *http.Request) {
 		"started": started,
 		"errors":  errors,
 	})
+}
+
+// handleVerifyMirror reports whether all blobs referenced by a release
+// (release manifest + every component image manifest) are present locally.
+// GET or POST — no side-effects, just walks the metadata.
+func (r *Router) handleVerifyMirror(w http.ResponseWriter, req *http.Request, version string) {
+	// Allow callers to pass either tag ("4.20.4-x86_64") or split version+arch.
+	ver := version
+	arch := ""
+	if i := strings.LastIndex(version, "-"); i > 0 {
+		head := version[:i]
+		tail := version[i+1:]
+		// Heuristic: arch is non-numeric and one of the known platform strings,
+		// otherwise treat the whole thing as a version.
+		if tail == "x86_64" || tail == "aarch64" || tail == "arm64" || tail == "ppc64le" || tail == "s390x" {
+			ver = head
+			arch = tail
+		}
+	}
+	if arch == "" {
+		// Fall back to the configured default (first arch).
+		rel, err := r.releaseManager.GetRelease(version)
+		if err == nil && rel.Architecture != "" {
+			ver = rel.Version
+			arch = rel.Architecture
+		}
+	}
+	if arch == "" {
+		http.Error(w, `{"error":"could not infer architecture; pass <version>-<arch>"}`, http.StatusBadRequest)
+		return
+	}
+
+	result, err := r.releaseManager.VerifyMirror(req.Context(), ver, arch)
+	if err != nil {
+		// Even on error we may have a partial result worth returning.
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":  err.Error(),
+			"result": result,
+		})
+		return
+	}
+	json.NewEncoder(w).Encode(result)
 }
 
 func (r *Router) handleResetState(w http.ResponseWriter, req *http.Request, version string) {

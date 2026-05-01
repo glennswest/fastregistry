@@ -560,13 +560,11 @@ func (c *Cloner) PullComponentImage(ctx context.Context, imageRef string) ([]byt
 			return nil, fmt.Errorf("storing component manifest blob: %w", err)
 		}
 	}
-	// Link to a synthetic repo so it shows up in catalog and is reachable
-	// at /v2/openshift/release-components/manifests/<sha256:digest>.
-	c.metadata.LinkBlobToRepo(mDigest, c.localRepo+"-components")
 
 	// Parse manifest for blobs to sync
 	var manifest struct {
-		Config struct {
+		MediaType string `json:"mediaType"`
+		Config    struct {
 			Digest string `json:"digest"`
 			Size   int64  `json:"size"`
 		} `json:"config"`
@@ -578,6 +576,29 @@ func (c *Cloner) PullComponentImage(ctx context.Context, imageRef string) ([]byt
 	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
 		return nil, fmt.Errorf("parsing component manifest: %w", err)
 	}
+
+	// Register the component manifest in the metadata store under a synthetic
+	// "<localRepo>-components" repo, keyed by its digest. This makes
+	// `GET /v2/<localRepo>-components/manifests/sha256:<d>` work — exactly
+	// what an OpenShift installer with imageContentSources rewrites to.
+	mediaType := manifest.MediaType
+	if mediaType == "" {
+		mediaType = "application/vnd.docker.distribution.manifest.v2+json"
+	}
+	mmeta := &storage.ManifestMeta{
+		Digest:    mDigest,
+		MediaType: mediaType,
+		Size:      int64(len(manifestBytes)),
+		CreatedAt: time.Now(),
+	}
+	for _, l := range manifest.Layers {
+		mmeta.Layers = append(mmeta.Layers, l.Digest)
+	}
+	if err := c.metadata.PutManifest(c.localRepo+"-components", mDigest.String(), mmeta); err != nil {
+		c.logf("Warning: registering component manifest %s in metadata: %v", mDigest.String()[:19], err)
+	}
+	// Also link the manifest blob (so blob-by-digest reads work too)
+	c.metadata.LinkBlobToRepo(mDigest, c.localRepo+"-components")
 
 	// Sync config blob
 	if manifest.Config.Digest != "" {

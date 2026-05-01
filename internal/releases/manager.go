@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os/exec"
 	"path/filepath"
@@ -15,7 +16,19 @@ import (
 	"github.com/gwest/fastregistry/config"
 	"github.com/gwest/fastregistry/internal/events"
 	"github.com/gwest/fastregistry/internal/storage"
+	"github.com/gwest/fastregistry/pkg/digest"
 )
+
+// readAllAndClose reads everything from r and closes it.
+func readAllAndClose(r io.ReadCloser) ([]byte, error) {
+	defer r.Close()
+	return io.ReadAll(r)
+}
+
+// digestParseCheck validates the string is a parseable sha256 digest.
+func digestParseCheck(s string) (digest.Digest, error) {
+	return digest.Parse(s)
+}
 
 const releaseKeyPrefix = "rel:"
 
@@ -356,6 +369,124 @@ func (m *Manager) CloneRelease(ctx context.Context, version string) error {
 	}()
 
 	return nil
+}
+
+// VerifyResult summarizes mirror completeness for a release.
+type VerifyResult struct {
+	Tag                  string   `json:"tag"`
+	Complete             bool     `json:"complete"`
+	ReleaseBlobsExpected int      `json:"release_blobs_expected"`
+	ReleaseBlobsPresent  int      `json:"release_blobs_present"`
+	ComponentsExpected   int      `json:"components_expected"`
+	ComponentManifestsOK int      `json:"component_manifests_ok"`
+	ComponentBlobsExpected int    `json:"component_blobs_expected"`
+	ComponentBlobsPresent  int    `json:"component_blobs_present"`
+	MissingBlobs         []string `json:"missing_blobs,omitempty"` // truncated to 50
+	MissingComponents    []string `json:"missing_components,omitempty"`
+}
+
+// VerifyMirror walks the release manifest and every component image manifest
+// it references, then checks every layer/config blob is present in the local
+// blob store. Returns a structured report so callers can confirm the mirror
+// is fully self-contained before publishing it to consumers.
+func (m *Manager) VerifyMirror(ctx context.Context, version, arch string) (*VerifyResult, error) {
+	tag := version + "-" + arch
+	res := &VerifyResult{Tag: tag}
+
+	// 1. Release manifest blobs
+	rmeta, err := m.metadata.GetManifest(m.cfg.LocalRepo, tag)
+	if err != nil {
+		return nil, fmt.Errorf("release manifest not found: %w", err)
+	}
+	relReader, _, err := m.cloner.blobs.Get(rmeta.Digest)
+	if err != nil {
+		return nil, fmt.Errorf("reading release manifest: %w", err)
+	}
+	relBytes, _ := readAllAndClose(relReader)
+	var relMan struct {
+		Config struct{ Digest string `json:"digest"` } `json:"config"`
+		Layers []struct{ Digest string `json:"digest"` } `json:"layers"`
+	}
+	if err := json.Unmarshal(relBytes, &relMan); err != nil {
+		return nil, fmt.Errorf("parsing release manifest: %w", err)
+	}
+	relDigests := []string{}
+	if relMan.Config.Digest != "" {
+		relDigests = append(relDigests, relMan.Config.Digest)
+	}
+	for _, l := range relMan.Layers {
+		relDigests = append(relDigests, l.Digest)
+	}
+	res.ReleaseBlobsExpected = len(relDigests)
+	for _, d := range relDigests {
+		dg, err := digestParseCheck(d)
+		if err != nil {
+			continue
+		}
+		if m.cloner.blobs.Exists(dg) {
+			res.ReleaseBlobsPresent++
+		} else {
+			res.MissingBlobs = appendCapped(res.MissingBlobs, d, 50)
+		}
+	}
+
+	// 2. Components — use the same image-references logic as the mirror
+	refs, err := m.extractor.FindReleaseComponents(version, arch)
+	if err != nil {
+		return res, fmt.Errorf("reading image-references: %w", err)
+	}
+	res.ComponentsExpected = len(refs)
+
+	for component, ref := range refs {
+		if ctx.Err() != nil {
+			return res, ctx.Err()
+		}
+		manBytes, err := m.cloner.LookupComponentManifest(ref)
+		if err != nil {
+			res.MissingComponents = append(res.MissingComponents, component+": "+truncateStr(err.Error(), 80))
+			continue
+		}
+		res.ComponentManifestsOK++
+		var cm struct {
+			Config struct{ Digest string `json:"digest"` } `json:"config"`
+			Layers []struct{ Digest string `json:"digest"` } `json:"layers"`
+		}
+		if err := json.Unmarshal(manBytes, &cm); err != nil {
+			res.MissingComponents = append(res.MissingComponents, component+": parse "+err.Error())
+			continue
+		}
+		dlist := []string{}
+		if cm.Config.Digest != "" {
+			dlist = append(dlist, cm.Config.Digest)
+		}
+		for _, l := range cm.Layers {
+			dlist = append(dlist, l.Digest)
+		}
+		for _, d := range dlist {
+			res.ComponentBlobsExpected++
+			dg, err := digestParseCheck(d)
+			if err != nil {
+				continue
+			}
+			if m.cloner.blobs.Exists(dg) {
+				res.ComponentBlobsPresent++
+			} else {
+				res.MissingBlobs = appendCapped(res.MissingBlobs, d, 50)
+			}
+		}
+	}
+
+	res.Complete = res.ReleaseBlobsPresent == res.ReleaseBlobsExpected &&
+		res.ComponentManifestsOK == res.ComponentsExpected &&
+		res.ComponentBlobsPresent == res.ComponentBlobsExpected
+	return res, nil
+}
+
+func appendCapped(xs []string, x string, max int) []string {
+	if len(xs) >= max {
+		return xs
+	}
+	return append(xs, x)
 }
 
 // ResetState resets a stuck release back to cloned state.
